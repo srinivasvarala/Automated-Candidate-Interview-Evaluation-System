@@ -5,32 +5,111 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Interview Coach</title>
     <link rel="stylesheet" href="/static/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.9/dist/cdn.min.js"></script>
 </head>
 <body>
 
-    <div id="setup-screen">
+<div x-data="interviewApp()" x-cloak>
+
+    <!-- Setup Screen -->
+    <div id="setup-screen" x-show="screen === 'setup'">
         <h1>AI Interview Prep</h1>
         <p class="subtitle">Enter the job role you want to practice for.</p>
-        <input type="text" id="jobRole" placeholder="e.g. AI Engineer, Product Manager" value="AI Engineer">
-        <button onclick="startInterview()">Start Interview</button>
+        <input type="text" x-model="jobRole" placeholder="e.g. AI Engineer, Product Manager"
+               @keydown.enter="startInterview()">
+        <button @click="startInterview()" :disabled="!jobRole.trim()">Start Interview</button>
     </div>
 
-    <div id="chat-screen">
+    <!-- Chat Screen -->
+    <div id="chat-screen" x-show="screen === 'chat' || screen === 'summary'" x-transition>
         <div id="header">
-            <h2 id="role-display">Interview</h2>
-            <span id="status">● Live</span>
+            <h2 x-text="jobRole + ' Interview'"></h2>
+            <span id="status" :class="statusClass" x-text="statusText"></span>
         </div>
-        
-        <div id="messages">
-            </div>
 
-        <div id="input-area">
-            <input type="text" id="msgInput" placeholder="Type your answer..." disabled>
-            <button onclick="sendMsg()" id="sendBtn">Send</button>
+        <div id="messages" x-ref="messages">
+            <template x-for="(msg, i) in messages" :key="i">
+                <div>
+                    <!-- System event -->
+                    <div x-show="msg.type === 'system'" class="system-message" x-text="msg.content"></div>
+
+                    <!-- Agent message -->
+                    <div x-show="msg.type === 'agent'" :class="'message ' + msg.source">
+                        <div class="sender-name" x-text="msg.sourceName"></div>
+                        <div x-text="msg.content"></div>
+                    </div>
+
+                    <!-- User message -->
+                    <div x-show="msg.type === 'user'" class="message user">
+                        <div x-text="msg.content"></div>
+                    </div>
+                </div>
+            </template>
+
+            <!-- Typing indicator -->
+            <div x-show="isTyping" class="typing-indicator">
+                <div class="sender-name" x-text="typingSource"></div>
+                <div class="dots"><span></span><span></span><span></span></div>
+            </div>
+        </div>
+
+        <!-- Scorecard (shown after interview) -->
+        <template x-if="summaryData">
+            <div id="scorecard" x-show="screen === 'summary'" x-transition>
+                <h3>Interview Scorecard</h3>
+                <div class="scores-grid">
+                    <template x-for="(score, category) in summaryData.scores" :key="category">
+                        <div class="score-item">
+                            <div class="score-label" x-text="formatCategory(category)"></div>
+                            <div class="score-bar-bg">
+                                <div class="score-bar" :style="'width:' + (score * 10) + '%'"
+                                     :class="scoreColor(score)"></div>
+                            </div>
+                            <div class="score-value" x-text="score + '/10'"></div>
+                        </div>
+                    </template>
+                </div>
+                <div class="feedback-section" x-show="summaryData.strengths && summaryData.strengths.length">
+                    <h4>Strengths</h4>
+                    <ul>
+                        <template x-for="s in summaryData.strengths" :key="s">
+                            <li x-text="s"></li>
+                        </template>
+                    </ul>
+                </div>
+                <div class="feedback-section" x-show="summaryData.improvements && summaryData.improvements.length">
+                    <h4>Areas for Improvement</h4>
+                    <ul>
+                        <template x-for="s in summaryData.improvements" :key="s">
+                            <li x-text="s"></li>
+                        </template>
+                    </ul>
+                </div>
+                <div class="overall-summary" x-show="summaryData.overall_summary">
+                    <h4>Overall</h4>
+                    <p x-text="summaryData.overall_summary"></p>
+                </div>
+                <button @click="resetInterview()" class="restart-btn">Start New Interview</button>
+            </div>
+        </template>
+
+        <!-- Input area -->
+        <div id="input-area" x-show="screen === 'chat'">
+            <input type="text" x-model="userInput" placeholder="Type your answer..."
+                   :disabled="!inputEnabled"
+                   @keydown.enter="sendAnswer()"
+                   x-ref="answerInput">
+            <button @click="sendAnswer()" :disabled="!inputEnabled || !userInput.trim()">Send</button>
+            <button @click="endInterview()" class="end-btn"
+                    :disabled="questionsAnswered < 1"
+                    title="End interview and get scorecard">End</button>
         </div>
     </div>
 
-    <script src="/static/script.js"></script>
+</div>
+
+<!-- app.js must load before Alpine (which is deferred) so interviewApp() is defined -->
+<script src="/static/app.js"></script>
 </body>
 </html>
