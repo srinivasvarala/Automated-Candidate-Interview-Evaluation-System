@@ -1,8 +1,16 @@
 function interviewApp() {
     return {
         // State
-        screen: 'setup',       // 'setup' | 'chat' | 'summary'
-        jobRole: 'AI Engineer',
+        screen: 'setup',       // 'setup' | 'chat' | 'summary' | 'history'
+        jobRole: '',
+        jobDescription: '',
+        interviewType: 'mixed',
+        interviewTypes: [
+            { value: 'mixed', label: 'Mixed', icon: '\u{1F500}', desc: 'Behavioral + Technical' },
+            { value: 'behavioral', label: 'Behavioral', icon: '\u{1F4AC}', desc: 'Past experience & soft skills' },
+            { value: 'technical', label: 'Technical', icon: '\u{1F4BB}', desc: 'Coding & problem-solving' },
+            { value: 'system_design', label: 'System Design', icon: '\u{1F3D7}', desc: 'Architecture & scale' },
+        ],
         messages: [],
         userInput: '',
         inputEnabled: false,
@@ -11,18 +19,33 @@ function interviewApp() {
         summaryData: null,
         ws: null,
         questionsAnswered: 0,
+        totalQuestions: 0,
         pendingEnd: false,
         connected: false,
+        copyBtnText: 'Copy to Clipboard',
+        resumeText: '',
+        resumeFilename: '',
+        resumeChars: 0,
+        resumeUploading: false,
+        resumeError: '',
+        historyItems: [],
+        historyLoading: false,
 
-        get statusText() {
-            if (this.screen === 'summary') return '● Completed';
-            if (this.connected) return '● Live';
-            return '● Disconnected';
+        get statusLabel() {
+            if (this.screen === 'summary') return 'Completed';
+            if (this.connected) return 'Live';
+            return 'Disconnected';
         },
         get statusClass() {
             if (this.screen === 'summary') return 'status-done';
             if (this.connected) return 'status-live';
             return 'status-disconnected';
+        },
+        get overallScore() {
+            if (!this.summaryData || !this.summaryData.scores) return 0;
+            const scores = Object.values(this.summaryData.scores);
+            if (scores.length === 0) return 0;
+            return scores.reduce((a, b) => a + b, 0) / scores.length;
         },
 
         // Actions
@@ -38,7 +61,12 @@ function interviewApp() {
 
             this.ws.onopen = () => {
                 this.connected = true;
-                this.ws.send(JSON.stringify({ job_position: this.jobRole }));
+                this.ws.send(JSON.stringify({
+                    job_position: this.jobRole,
+                    job_description: this.jobDescription,
+                    interview_type: this.interviewType,
+                    resume_text: this.resumeText,
+                }));
             };
 
             this.ws.onmessage = (event) => {
@@ -99,6 +127,9 @@ function interviewApp() {
         handleSystemEvent(data) {
             switch (data.event) {
                 case 'interview_started':
+                    if (data.metadata && data.metadata.num_questions) {
+                        this.totalQuestions = data.metadata.num_questions;
+                    }
                     this.messages.push({
                         type: 'system',
                         content: data.content,
@@ -151,6 +182,10 @@ function interviewApp() {
             this.userInput = '';
             this.inputEnabled = false;
             this.questionsAnswered++;
+            // Reset textarea height
+            if (this.$refs.answerInput) {
+                this.$refs.answerInput.style.height = 'auto';
+            }
             this.scrollToBottom();
         },
 
@@ -201,11 +236,141 @@ function interviewApp() {
             this.inputEnabled = false;
             this.isTyping = false;
             this.questionsAnswered = 0;
+            this.totalQuestions = 0;
             this.pendingEnd = false;
             this.connected = false;
+            this.copyBtnText = 'Copy to Clipboard';
+            this.resumeText = '';
+            this.resumeFilename = '';
+            this.resumeChars = 0;
+            this.resumeError = '';
+        },
+
+        copyScorecard() {
+            if (!this.summaryData) return;
+
+            const s = this.summaryData;
+            let text = `Interview Scorecard - ${this.jobRole}\n`;
+            text += '='.repeat(40) + '\n\n';
+
+            if (s.scores) {
+                text += 'SCORES\n';
+                for (const [cat, score] of Object.entries(s.scores)) {
+                    text += `  ${this.formatCategory(cat)}: ${score}/10\n`;
+                }
+                text += '\n';
+            }
+
+            if (s.strengths && s.strengths.length) {
+                text += 'STRENGTHS\n';
+                s.strengths.forEach(str => text += `  - ${str}\n`);
+                text += '\n';
+            }
+
+            if (s.improvements && s.improvements.length) {
+                text += 'AREAS FOR IMPROVEMENT\n';
+                s.improvements.forEach(imp => text += `  - ${imp}\n`);
+                text += '\n';
+            }
+
+            if (s.overall_summary) {
+                text += 'OVERALL\n';
+                text += `  ${s.overall_summary}\n`;
+            }
+
+            navigator.clipboard.writeText(text).then(() => {
+                this.copyBtnText = 'Copied!';
+                setTimeout(() => { this.copyBtnText = 'Copy to Clipboard'; }, 2000);
+            });
+        },
+
+        // History
+        async showHistory() {
+            this.screen = 'history';
+            this.historyLoading = true;
+            try {
+                const res = await fetch('/api/interviews?limit=20');
+                const data = await res.json();
+                this.historyItems = data.interviews || [];
+            } catch (e) {
+                this.historyItems = [];
+            }
+            this.historyLoading = false;
+        },
+
+        async viewHistoryDetail(id) {
+            try {
+                const res = await fetch(`/api/interviews/${id}`);
+                const interview = await res.json();
+                if (interview.summary_data) {
+                    this.jobRole = interview.job_position;
+                    this.summaryData = interview.summary_data;
+                    this.screen = 'summary';
+                    this.messages = (interview.messages || []).map(m => ({
+                        type: m.role === 'user' ? 'user' : 'agent',
+                        source: m.name || 'interviewer',
+                        sourceName: this.capitalize(m.name || 'interviewer'),
+                        content: m.content,
+                        metadata: {},
+                    }));
+                }
+            } catch (e) {
+                // silently fail
+            }
+        },
+
+        // Resume upload
+        async uploadResume(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            this.resumeError = '';
+            this.resumeUploading = true;
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const res = await fetch('/api/upload-resume', {
+                    method: 'POST',
+                    body: formData,
+                });
+                const data = await res.json();
+                if (data.error) {
+                    this.resumeError = data.error;
+                } else {
+                    this.resumeText = data.text;
+                    this.resumeFilename = data.filename;
+                    this.resumeChars = data.chars;
+                }
+            } catch (e) {
+                this.resumeError = 'Failed to upload resume. Please try again.';
+            }
+            this.resumeUploading = false;
+        },
+
+        removeResume() {
+            this.resumeText = '';
+            this.resumeFilename = '';
+            this.resumeChars = 0;
+            this.resumeError = '';
         },
 
         // Helpers
+        autoResize(event) {
+            const el = event.target;
+            el.style.height = 'auto';
+            el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+        },
+
+        renderMarkdown(text) {
+            if (!text) return '';
+            if (typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
+                return DOMPurify.sanitize(marked.parse(text));
+            }
+            return text;
+        },
+
         scrollToBottom() {
             this.$nextTick(() => {
                 const el = this.$refs.messages;
@@ -214,6 +379,7 @@ function interviewApp() {
         },
 
         capitalize(s) {
+            if (!s) return '';
             return s.charAt(0).toUpperCase() + s.slice(1);
         },
 
@@ -222,9 +388,46 @@ function interviewApp() {
         },
 
         scoreColor(score) {
-            if (score >= 8) return 'score-high';
+            if (score >= 7) return 'score-high';
             if (score >= 5) return 'score-mid';
             return 'score-low';
+        },
+
+        gradeColor(score) {
+            if (score >= 7) return '#10b981';
+            if (score >= 5) return '#f59e0b';
+            return '#ef4444';
+        },
+
+        gradeVerdict(score) {
+            if (score >= 9) return 'Outstanding performance';
+            if (score >= 8) return 'Strong candidate';
+            if (score >= 7) return 'Above average performance';
+            if (score >= 6) return 'Solid foundation, room to grow';
+            if (score >= 5) return 'Average performance';
+            if (score >= 4) return 'Below expectations';
+            return 'Needs significant improvement';
+        },
+
+        // Check if this is the very first interviewer message (no separator needed)
+        isFirstInterviewer(index) {
+            for (let i = 0; i < index; i++) {
+                if (this.messages[i].type === 'agent' && this.messages[i].source === 'interviewer') {
+                    return false;
+                }
+            }
+            return true;
+        },
+
+        // Get the round number for an interviewer message at a given index
+        getRoundNumber(index) {
+            let round = 0;
+            for (let i = 0; i <= index; i++) {
+                if (this.messages[i].type === 'agent' && this.messages[i].source === 'interviewer') {
+                    round++;
+                }
+            }
+            return round;
         },
     };
 }

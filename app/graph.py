@@ -27,7 +27,7 @@ def build_interview_graph():
         "evaluator": "evaluator",
         "summary": "summary",
     })
-    # Evaluator always loops back to interviewer
+    # Evaluator always loops back to interviewer — user decides when to end
     graph.add_edge("evaluator", "interviewer")
     graph.add_edge("summary", END)
 

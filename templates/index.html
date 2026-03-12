@@ -5,105 +5,380 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Interview Coach</title>
     <link rel="stylesheet" href="/static/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.9/dist/cdn.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
 </head>
 <body>
 
 <div x-data="interviewApp()" x-cloak>
 
     <!-- Setup Screen -->
-    <div id="setup-screen" x-show="screen === 'setup'">
-        <h1>AI Interview Prep</h1>
-        <p class="subtitle">Enter the job role you want to practice for.</p>
-        <input type="text" x-model="jobRole" placeholder="e.g. AI Engineer, Product Manager"
-               @keydown.enter="startInterview()">
-        <button @click="startInterview()" :disabled="!jobRole.trim()">Start Interview</button>
+    <div id="setup-screen" x-show="screen === 'setup'" x-transition:enter="screen-enter" x-transition:leave="screen-leave">
+        <div class="setup-header">
+            <div class="logo-mark">
+                <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                    <rect width="32" height="32" rx="8" fill="url(#logo-grad)"/>
+                    <path d="M10 16.5L14 20.5L22 12.5" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    <defs><linearGradient id="logo-grad" x1="0" y1="0" x2="32" y2="32"><stop stop-color="#6366f1"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs>
+                </svg>
+            </div>
+            <h1>AI Interview Coach</h1>
+            <p class="subtitle">Practice with adaptive AI interviews tailored to your role, resume, and job description.</p>
+        </div>
+
+        <div class="setup-form">
+            <label class="field-label" for="job-role">Job Role <span class="required">*</span></label>
+            <input id="job-role" type="text" x-model="jobRole" placeholder="e.g. AI Engineer, Product Manager"
+                   @keydown.enter="startInterview()">
+
+            <label class="field-label" for="job-desc">Job Description <span class="optional">(optional)</span></label>
+            <textarea id="job-desc" x-model="jobDescription" rows="3"
+                      placeholder="Paste the job description here for tailored questions..."></textarea>
+
+            <label class="field-label">Resume <span class="optional">(optional)</span></label>
+            <div class="resume-upload" :class="{'resume-uploaded': resumeFilename}">
+                <template x-if="!resumeFilename">
+                    <label class="upload-area" for="resume-file">
+                        <input id="resume-file" type="file" accept=".pdf,.txt,.md" @change="uploadResume($event)" hidden>
+                        <div class="upload-icon-wrapper">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="12" y2="12"/><line x1="15" y1="15" x2="12" y2="12"/>
+                            </svg>
+                        </div>
+                        <span class="upload-text">Drop resume or <strong>click to upload</strong></span>
+                        <span class="upload-hint">PDF or text, max 5 MB</span>
+                    </label>
+                </template>
+                <template x-if="resumeFilename">
+                    <div class="resume-info">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                        <span class="resume-name" x-text="resumeFilename"></span>
+                        <span class="resume-chars" x-text="resumeChars + ' chars'"></span>
+                        <button type="button" class="remove-resume" @click="removeResume()">Remove</button>
+                    </div>
+                </template>
+                <div x-show="resumeUploading" class="upload-progress">
+                    <div class="spinner-small"></div> Parsing resume...
+                </div>
+                <div x-show="resumeError" class="upload-error" x-text="resumeError"></div>
+            </div>
+
+            <label class="field-label">Interview Type</label>
+            <div class="type-selector">
+                <template x-for="t in interviewTypes" :key="t.value">
+                    <button class="type-card" :class="{'type-card-active': interviewType === t.value}"
+                            @click="interviewType = t.value">
+                        <span class="type-icon" x-text="t.icon"></span>
+                        <span class="type-label" x-text="t.label"></span>
+                        <span class="type-desc" x-text="t.desc"></span>
+                    </button>
+                </template>
+            </div>
+
+            <button @click="startInterview()" :disabled="!jobRole.trim()" class="start-btn">
+                <span>Start Interview</span>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+            </button>
+
+            <button @click="showHistory()" class="history-btn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                View Past Interviews
+            </button>
+        </div>
+    </div>
+
+    <!-- History Screen -->
+    <div id="history-screen" x-show="screen === 'history'" x-transition:enter="screen-enter" x-transition:leave="screen-leave">
+        <div class="history-header">
+            <button @click="screen = 'setup'" class="back-btn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+                Back
+            </button>
+            <h2>Past Interviews</h2>
+            <div style="width:70px"></div>
+        </div>
+        <div x-show="historyLoading" class="history-loading">
+            <div class="spinner"></div>
+            Loading...
+        </div>
+        <div x-show="!historyLoading && historyItems.length === 0" class="history-empty">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+            <p>No past interviews yet.</p>
+            <span>Complete an interview to see your history here.</span>
+        </div>
+        <template x-for="item in historyItems" :key="item.id">
+            <div class="history-card" @click="viewHistoryDetail(item.id)">
+                <div class="history-card-header">
+                    <strong x-text="item.job_position"></strong>
+                    <span class="interview-type-badge" x-text="capitalize((item.interview_type || 'mixed').replace('_', ' '))"></span>
+                </div>
+                <div class="history-card-meta">
+                    <span x-text="item.questions_asked + ' questions'"></span>
+                    <span x-text="new Date(item.created_at).toLocaleDateString()"></span>
+                </div>
+                <template x-if="item.summary_data && item.summary_data.scores">
+                    <div class="history-scores">
+                        <template x-for="(score, cat) in item.summary_data.scores" :key="cat">
+                            <span class="history-score-pill" :class="scoreColor(score)"
+                                  x-text="formatCategory(cat) + ': ' + score"></span>
+                        </template>
+                    </div>
+                </template>
+            </div>
+        </template>
     </div>
 
     <!-- Chat Screen -->
-    <div id="chat-screen" x-show="screen === 'chat' || screen === 'summary'" x-transition>
+    <div id="chat-screen" x-show="screen === 'chat' || screen === 'summary'" x-transition:enter="screen-enter" x-transition:leave="screen-leave">
         <div id="header">
-            <h2 x-text="jobRole + ' Interview'"></h2>
-            <span id="status" :class="statusClass" x-text="statusText"></span>
+            <div class="header-left">
+                <div class="header-logo">
+                    <svg width="24" height="24" viewBox="0 0 32 32" fill="none">
+                        <rect width="32" height="32" rx="8" fill="url(#logo-grad2)"/>
+                        <path d="M10 16.5L14 20.5L22 12.5" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        <defs><linearGradient id="logo-grad2" x1="0" y1="0" x2="32" y2="32"><stop stop-color="#6366f1"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs>
+                    </svg>
+                </div>
+                <div class="header-info">
+                    <h2 x-text="jobRole + ' Interview'"></h2>
+                    <span class="interview-type-badge" x-text="capitalize(interviewType.replace('_', ' '))"></span>
+                </div>
+            </div>
+            <div class="header-right">
+                <!-- Progress bar -->
+                <div class="progress-bar-wrapper" x-show="screen === 'chat' && totalQuestions > 0">
+                    <div class="progress-segments">
+                        <template x-for="i in totalQuestions" :key="i">
+                            <div class="progress-segment"
+                                 :class="{
+                                     'segment-done': i <= questionsAnswered,
+                                     'segment-current': i === questionsAnswered + 1,
+                                     'segment-future': i > questionsAnswered + 1
+                                 }"></div>
+                        </template>
+                    </div>
+                    <span class="progress-label" x-text="'Q' + Math.min(questionsAnswered + 1, totalQuestions) + '/' + totalQuestions"></span>
+                </div>
+                <span id="status" :class="statusClass">
+                    <span class="status-dot"></span>
+                    <span x-text="statusLabel"></span>
+                </span>
+            </div>
         </div>
 
         <div id="messages" x-ref="messages">
             <template x-for="(msg, i) in messages" :key="i">
                 <div>
+                    <!-- Round separator -->
+                    <div x-show="msg.type === 'agent' && msg.source === 'interviewer' && i > 0 && !isFirstInterviewer(i)"
+                         class="round-separator">
+                        <span class="round-line"></span>
+                        <span class="round-label" x-text="'Round ' + getRoundNumber(i)"></span>
+                        <span class="round-line"></span>
+                    </div>
+
                     <!-- System event -->
-                    <div x-show="msg.type === 'system'" class="system-message" x-text="msg.content"></div>
+                    <div x-show="msg.type === 'system'" class="system-message">
+                        <span class="system-dot"></span>
+                        <span x-text="msg.content"></span>
+                    </div>
 
                     <!-- Agent message -->
                     <div x-show="msg.type === 'agent'" :class="'message ' + msg.source">
-                        <div class="sender-name" x-text="msg.sourceName"></div>
-                        <div x-text="msg.content"></div>
+                        <div class="msg-avatar" :class="'avatar-' + msg.source">
+                            <template x-if="msg.source === 'interviewer'">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+                            </template>
+                            <template x-if="msg.source === 'evaluator'">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                            </template>
+                            <template x-if="msg.source === 'summary'">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                            </template>
+                        </div>
+                        <div class="msg-body">
+                            <div class="sender-header">
+                                <span class="sender-name" x-text="msg.sourceName"></span>
+                                <template x-if="msg.source === 'evaluator' && msg.metadata && msg.metadata.tier">
+                                    <span class="difficulty-badge" :class="'tier-' + msg.metadata.tier_index">
+                                        <span x-text="msg.metadata.tier"></span>
+                                        <span class="score-dot" x-text="msg.metadata.score + '/10'"></span>
+                                    </span>
+                                </template>
+                            </div>
+                            <div class="msg-content" x-html="renderMarkdown(msg.content)"></div>
+                        </div>
                     </div>
 
                     <!-- User message -->
                     <div x-show="msg.type === 'user'" class="message user">
-                        <div x-text="msg.content"></div>
+                        <div class="msg-body">
+                            <div class="msg-content" x-text="msg.content"></div>
+                        </div>
+                        <div class="msg-avatar avatar-user">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                        </div>
                     </div>
                 </div>
             </template>
 
             <!-- Typing indicator -->
-            <div x-show="isTyping" class="typing-indicator">
-                <div class="sender-name" x-text="typingSource"></div>
-                <div class="dots"><span></span><span></span><span></span></div>
+            <div x-show="isTyping" class="typing-indicator" x-transition>
+                <div class="msg-avatar avatar-interviewer">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+                </div>
+                <div class="typing-body">
+                    <div class="sender-name" x-text="typingSource"></div>
+                    <div class="dots"><span></span><span></span><span></span></div>
+                </div>
             </div>
         </div>
 
         <!-- Scorecard (shown after interview) -->
         <template x-if="summaryData">
             <div id="scorecard" x-show="screen === 'summary'" x-transition>
-                <h3>Interview Scorecard</h3>
-                <div class="scores-grid">
-                    <template x-for="(score, category) in summaryData.scores" :key="category">
-                        <div class="score-item">
-                            <div class="score-label" x-text="formatCategory(category)"></div>
-                            <div class="score-bar-bg">
-                                <div class="score-bar" :style="'width:' + (score * 10) + '%'"
-                                     :class="scoreColor(score)"></div>
+                <!-- Overall Grade Ring -->
+                <div class="scorecard-hero">
+                    <div class="grade-ring" :class="scoreColor(overallScore)">
+                        <svg viewBox="0 0 120 120">
+                            <circle cx="60" cy="60" r="52" fill="none" stroke="#e5e7eb" stroke-width="8"/>
+                            <circle cx="60" cy="60" r="52" fill="none" :stroke="gradeColor(overallScore)" stroke-width="8"
+                                    stroke-linecap="round"
+                                    :stroke-dasharray="(overallScore / 10) * 327 + ' 327'"
+                                    transform="rotate(-90 60 60)"
+                                    class="grade-circle-fill"/>
+                        </svg>
+                        <div class="grade-value">
+                            <span class="grade-number" x-text="overallScore.toFixed(1)"></span>
+                            <span class="grade-max">/10</span>
+                        </div>
+                    </div>
+                    <h3>Interview Scorecard</h3>
+                    <p class="grade-verdict" x-text="gradeVerdict(overallScore)"></p>
+                </div>
+
+                <div class="scorecard-body">
+                    <div class="scores-grid">
+                        <template x-for="(score, category) in summaryData.scores" :key="category">
+                            <div class="score-item">
+                                <div class="score-label" x-text="formatCategory(category)"></div>
+                                <div class="score-bar-bg">
+                                    <div class="score-bar" :style="'width:' + (score * 10) + '%'"
+                                         :class="scoreColor(score)"></div>
+                                </div>
+                                <div class="score-value" :class="'text-' + scoreColor(score)" x-text="score + '/10'"></div>
                             </div>
-                            <div class="score-value" x-text="score + '/10'"></div>
+                        </template>
+                    </div>
+
+                    <div class="feedback-columns">
+                        <div class="feedback-section strengths-section" x-show="summaryData.strengths && summaryData.strengths.length">
+                            <h4>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                Strengths
+                            </h4>
+                            <ul>
+                                <template x-for="s in summaryData.strengths" :key="s">
+                                    <li x-text="s"></li>
+                                </template>
+                            </ul>
+                        </div>
+                        <div class="feedback-section improvements-section" x-show="summaryData.improvements && summaryData.improvements.length">
+                            <h4>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                                Areas for Improvement
+                            </h4>
+                            <ul>
+                                <template x-for="s in summaryData.improvements" :key="s">
+                                    <li x-text="s"></li>
+                                </template>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="overall-summary" x-show="summaryData.overall_summary">
+                        <h4>Overall Assessment</h4>
+                        <p x-text="summaryData.overall_summary"></p>
+                    </div>
+
+                    <template x-if="summaryData.difficulty_curve && summaryData.difficulty_curve.length">
+                        <div class="difficulty-curve-section">
+                            <h4>Difficulty Progression</h4>
+                            <div class="curve-chart">
+                                <template x-for="(q, i) in summaryData.difficulty_curve" :key="i">
+                                    <div class="curve-bar-wrapper">
+                                        <div class="curve-score" x-text="q.score"></div>
+                                        <div class="curve-bar-bg">
+                                            <div class="curve-bar" :class="scoreColor(q.score)"
+                                                 :style="'height:' + (q.score * 10) + '%'"></div>
+                                        </div>
+                                        <div class="curve-label" x-text="'Q' + q.question"></div>
+                                        <div class="curve-tier" :class="'tier-' + q.tier_index"
+                                             x-text="q.tier"></div>
+                                    </div>
+                                </template>
+                            </div>
                         </div>
                     </template>
+
+                    <template x-if="summaryData.resume_analysis">
+                        <div class="resume-analysis-section">
+                            <h4>Resume vs. Performance</h4>
+                            <div x-show="summaryData.resume_analysis.verified_skills && summaryData.resume_analysis.verified_skills.length" class="analysis-group">
+                                <span class="analysis-label verified-label">Verified</span>
+                                <ul>
+                                    <template x-for="s in summaryData.resume_analysis.verified_skills" :key="s">
+                                        <li x-text="s"></li>
+                                    </template>
+                                </ul>
+                            </div>
+                            <div x-show="summaryData.resume_analysis.gaps && summaryData.resume_analysis.gaps.length" class="analysis-group">
+                                <span class="analysis-label gap-label">Gaps</span>
+                                <ul>
+                                    <template x-for="g in summaryData.resume_analysis.gaps" :key="g">
+                                        <li x-text="g"></li>
+                                    </template>
+                                </ul>
+                            </div>
+                            <div x-show="summaryData.resume_analysis.surprises && summaryData.resume_analysis.surprises.length" class="analysis-group">
+                                <span class="analysis-label surprise-label">Surprises</span>
+                                <ul>
+                                    <template x-for="s in summaryData.resume_analysis.surprises" :key="s">
+                                        <li x-text="s"></li>
+                                    </template>
+                                </ul>
+                            </div>
+                        </div>
+                    </template>
+
+                    <div class="scorecard-actions">
+                        <button @click="copyScorecard()" class="copy-btn" x-text="copyBtnText">Copy to Clipboard</button>
+                        <button @click="resetInterview()" class="restart-btn">Start New Interview</button>
+                    </div>
                 </div>
-                <div class="feedback-section" x-show="summaryData.strengths && summaryData.strengths.length">
-                    <h4>Strengths</h4>
-                    <ul>
-                        <template x-for="s in summaryData.strengths" :key="s">
-                            <li x-text="s"></li>
-                        </template>
-                    </ul>
-                </div>
-                <div class="feedback-section" x-show="summaryData.improvements && summaryData.improvements.length">
-                    <h4>Areas for Improvement</h4>
-                    <ul>
-                        <template x-for="s in summaryData.improvements" :key="s">
-                            <li x-text="s"></li>
-                        </template>
-                    </ul>
-                </div>
-                <div class="overall-summary" x-show="summaryData.overall_summary">
-                    <h4>Overall</h4>
-                    <p x-text="summaryData.overall_summary"></p>
-                </div>
-                <button @click="resetInterview()" class="restart-btn">Start New Interview</button>
             </div>
         </template>
 
         <!-- Input area -->
         <div id="input-area" x-show="screen === 'chat'">
-            <input type="text" x-model="userInput" placeholder="Type your answer..."
-                   :disabled="!inputEnabled"
-                   @keydown.enter="sendAnswer()"
-                   x-ref="answerInput">
-            <button @click="sendAnswer()" :disabled="!inputEnabled || !userInput.trim()">Send</button>
-            <button @click="endInterview()" class="end-btn"
-                    :disabled="questionsAnswered < 1"
-                    title="End interview and get scorecard">End</button>
+            <div class="input-wrapper">
+                <textarea x-model="userInput" placeholder="Type your answer... (Shift+Enter for new line)"
+                       :disabled="!inputEnabled"
+                       @keydown.enter.prevent="if (!$event.shiftKey) sendAnswer(); else userInput += '\n'"
+                       @input="autoResize($event)"
+                       x-ref="answerInput"
+                       rows="2"></textarea>
+                <div class="input-buttons">
+                    <button @click="sendAnswer()" :disabled="!inputEnabled || !userInput.trim()" class="send-btn" title="Send answer">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                    </button>
+                    <button @click="endInterview()" class="end-btn"
+                            :disabled="questionsAnswered < 1"
+                            title="End interview and get scorecard">End</button>
+                </div>
+            </div>
         </div>
     </div>
 

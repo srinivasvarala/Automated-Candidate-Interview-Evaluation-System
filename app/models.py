@@ -4,26 +4,22 @@ from typing import Annotated, Any
 from pydantic import BaseModel
 from langgraph.graph.message import add_messages
 from langchain_core.messages import BaseMessage
+from typing import TypedDict
 
 
 # --- LangGraph State ---
 
-class InterviewState:
-    """TypedDict-style state for LangGraph (defined as annotations)."""
-    pass
-
-
-# We use a plain TypedDict for LangGraph compatibility
-from typing import TypedDict
-
-
 class GraphState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
     job_position: str
+    job_description: str
+    resume_text: str  # extracted text from uploaded resume (optional)
+    interview_type: str  # "mixed" | "behavioral" | "technical" | "system_design"
     questions_asked: int
     current_phase: str  # "interviewer" | "candidate" | "evaluator" | "summary"
     end_requested: bool
     summary_data: dict[str, Any] | None
+    performance_tracker: dict[str, Any] | None  # adaptive difficulty state
 
 
 # --- WebSocket Message Models ---
