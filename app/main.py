@@ -164,7 +164,6 @@ async def websocket_interview(websocket: WebSocket):
     await websocket.accept()
     session_id = str(uuid.uuid4())
     collected_messages: list[dict] = []
-    interview_meta = {}
 
     try:
         raw = await websocket.receive_text()
@@ -193,13 +192,6 @@ async def websocket_interview(websocket: WebSocket):
         interview_type = start_msg.get("interview_type", "mixed").strip()
         if interview_type not in ("mixed", "behavioral", "technical", "system_design"):
             interview_type = "mixed"
-
-        interview_meta = {
-            "job_position": job_position,
-            "job_description": job_description,
-            "interview_type": interview_type,
-            "has_resume": bool(resume_text),
-        }
 
         logger.info("[%s] Starting interview: position=%s, type=%s, has_resume=%s", session_id, job_position, interview_type, bool(resume_text))
 
