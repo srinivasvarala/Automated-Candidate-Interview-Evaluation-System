@@ -32,6 +32,18 @@ class TestBuildMessages:
         assert msgs[0] == {"role": "system", "content": prompt}
 
 
+    def test_never_ends_on_an_assistant_message(self, state_with_conversation):
+        state_with_conversation["messages"].append(AIMessage(content="Nice work.", name="evaluator"))
+        msgs = _build_messages(state_with_conversation, "System prompt", "Ask the next question.")
+        assert msgs[-2] == {"role": "assistant", "content": "Nice work."}
+        assert msgs[-1] == {"role": "user", "content": "Ask the next question."}
+
+    def test_leaves_a_trailing_user_message_alone(self, state_with_conversation):
+        msgs = _build_messages(state_with_conversation, "System prompt")
+        assert msgs[-1]["role"] == "user"
+        assert "Please continue" not in msgs[-1]["content"]
+
+
 class TestInterviewerNode:
     @pytest.mark.asyncio
     async def test_returns_ai_message(self, sample_state, mock_llm_response):

@@ -63,6 +63,9 @@ _DIFFICULTY_TIERS = [
 _DEFAULT_TIER_BY_QUESTION = {1: 0, 2: 1, 3: 2, 4: 2, 5: 3, 6: 3}  # 7+ → 4
 
 
+_NEXT_QUESTION_PROMPT = "Ask the next interview question."
+
+
 def _init_tracker() -> dict:
     """Create a fresh performance tracker."""
     return {
@@ -138,8 +141,14 @@ def tier_name(tier_index: int) -> str:
     return _get_difficulty_for_tier(max(tier_index, 0))[0]
 
 
-def _build_messages(state: GraphState, system_prompt: str) -> list[dict]:
-    """Convert graph state messages + a system prompt into LiteLLM format."""
+def _build_messages(
+    state: GraphState, system_prompt: str, closing_prompt: str = "Please continue."
+) -> list[dict]:
+    """Convert graph state messages + a system prompt into LiteLLM format.
+
+    Some models reject a conversation that ends on an assistant message
+    (no prefill), so a closing user turn is added when that would happen.
+    """
     msgs = [{"role": "system", "content": system_prompt}]
     for m in state["messages"]:
         if isinstance(m, HumanMessage):
@@ -148,6 +157,8 @@ def _build_messages(state: GraphState, system_prompt: str) -> list[dict]:
             msgs.append({"role": "assistant", "content": m.content})
         elif isinstance(m, SystemMessage):
             pass  # skip internal system messages in conversation
+    if msgs[-1]["role"] == "assistant":
+        msgs.append({"role": "user", "content": closing_prompt})
     return msgs
 
 
@@ -256,12 +267,14 @@ The candidate submitted the resume below. Use it to:
 {resume[:4000]}"""
 
     logger.info("Interviewer generating question %d/%d for %s (%s)", q_num, total, job, interview_type)
-    response = await llm_service.complete(_build_messages(state, system_prompt))
+    response = await llm_service.complete(_build_messages(state, system_prompt, _NEXT_QUESTION_PROMPT))
 
     # If LLM returned empty, retry once with higher temperature
     if not response or not response.strip():
         logger.warning("Interviewer got empty response, retrying with higher temperature")
-        response = await llm_service.complete(_build_messages(state, system_prompt), temperature=0.9)
+        response = await llm_service.complete(
+            _build_messages(state, system_prompt, _NEXT_QUESTION_PROMPT), temperature=0.9
+        )
 
     if not response or not response.strip():
         logger.error("Interviewer failed to generate question after retry")

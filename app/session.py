@@ -358,4 +358,7 @@ class InterviewSession:
         """Drop the graph checkpoint; this session can no longer resume."""
         checkpointer = getattr(self._graph, "checkpointer", None)
         if checkpointer is not None and hasattr(checkpointer, "delete_thread"):
-            checkpointer.delete_thread(self.id)
+            try:
+                checkpointer.delete_thread(self.id)
+            except Exception:
+                logger.warning("[%s] Could not delete graph checkpoint", self.id, exc_info=True)

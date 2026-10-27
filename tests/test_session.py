@@ -206,3 +206,18 @@ async def test_abandon_marks_interview_abandoned(interview):
     assert interview.status == "abandoned"
     assert (await database.get_interview(interview.id))["status"] == "abandoned"
     assert kinds(await collect(interview.answer("late"))) == ["Error"]
+
+
+async def test_checkpoint_cleanup_failure_does_not_lose_the_final_event():
+    graph = build_interview_graph()
+    interview = session.InterviewSession(graph)
+
+    def explode(thread_id):
+        raise RuntimeError("dictionary changed size during iteration")
+
+    graph.checkpointer.delete_thread = explode
+    await collect(interview.start("SWE"))
+    await collect(interview.answer("a"))
+    final = await collect(interview.end())
+    assert kinds(final) == ["Typing", "Summary", "Complete"]
+    assert interview.status == "completed"

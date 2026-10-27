@@ -216,7 +216,7 @@ Edit `.env`:
 
 ```env
 # LiteLLM model string (see https://docs.litellm.ai/docs/providers)
-LLM_MODEL=anthropic/claude-sonnet-4-20250514
+LLM_MODEL=anthropic/claude-sonnet-5-5
 
 # Your API key
 LLM_API_KEY=your-api-key-here
@@ -230,7 +230,7 @@ MAX_EVALUATOR_WORDS=50
 
 | Provider | Model String | Notes |
 |----------|-------------|-------|
-| Anthropic | `anthropic/claude-sonnet-4-20250514` | Recommended |
+| Anthropic | `anthropic/claude-sonnet-5-5` | Recommended |
 | OpenAI | `openai/gpt-4o` | Full JSON mode support |
 | Ollama (local) | `ollama/llama3` | No API key needed |
 

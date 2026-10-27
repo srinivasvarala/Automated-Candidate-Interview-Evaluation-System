@@ -5,6 +5,25 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Models that rejected `temperature`; learned at runtime, since newer models drop it.
+_NO_TEMPERATURE: set[str] = set()
+
+
+async def _acompletion(**kwargs):
+    """Call litellm, omitting `temperature` for models that don't accept it."""
+    model = kwargs["model"]
+    if model in _NO_TEMPERATURE:
+        kwargs.pop("temperature", None)
+    try:
+        return await litellm.acompletion(**kwargs)
+    except litellm.BadRequestError as e:
+        if "temperature" not in kwargs or "temperature" not in str(e).lower():
+            raise
+        logger.info("Model %s does not accept temperature; retrying without it", model)
+        _NO_TEMPERATURE.add(model)
+        kwargs.pop("temperature")
+        return await litellm.acompletion(**kwargs)
+
 
 def _extract_content(response) -> str:
     """Extract text content from LLM response, handling provider differences."""
@@ -30,7 +49,7 @@ def _extract_content(response) -> str:
 async def complete(messages: list[dict], temperature: float = 0.7) -> str:
     """Call LLM and return the full response text."""
     logger.debug("LLM call: model=%s, messages=%d", settings.llm_model, len(messages))
-    response = await litellm.acompletion(
+    response = await _acompletion(
         model=settings.llm_model,
         messages=messages,
         api_key=settings.llm_api_key,
@@ -64,7 +83,7 @@ async def complete_json(messages: list[dict], temperature: float = 0.3) -> str:
     if not model.startswith("anthropic/") and not model.startswith("claude"):
         kwargs["response_format"] = {"type": "json_object"}
 
-    response = await litellm.acompletion(**kwargs)
+    response = await _acompletion(**kwargs)
     result = _extract_content(response)
 
     if not result:
