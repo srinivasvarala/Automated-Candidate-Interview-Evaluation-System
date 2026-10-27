@@ -6,6 +6,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.types import interrupt
 
 from app.config import settings
+from app.difficulty import Difficulty
 from app.models import GraphState
 from app import llm_service
 
@@ -50,95 +51,7 @@ Always include a concrete scale number or constraint. Ask follow-ups about failu
 This gives a well-rounded assessment. Don't cluster similar question types together.""",
 }
 
-# Adaptive difficulty tiers — index 0..4, names match what's shown in the UI
-_DIFFICULTY_TIERS = [
-    {"name": "Warm-up", "guidance": "Ask a straightforward question to ease the candidate in and build rapport. Light behavioral or motivational."},
-    {"name": "Foundation", "guidance": "Probe relevant experience or a core concept for the role. Moderate depth."},
-    {"name": "Mid-level", "guidance": "Ask role-specific technical or problem-solving questions that require structured thinking."},
-    {"name": "Advanced", "guidance": "Ask questions requiring multi-step analysis, system-level thinking, or nuanced trade-offs."},
-    {"name": "Expert", "guidance": "Present complex, ambiguous scenarios. Probe edge cases, failure modes, and architectural decisions. This is where strong candidates differentiate themselves."},
-]
-
-# Default tier progression by question number (used before adaptive data exists)
-_DEFAULT_TIER_BY_QUESTION = {1: 0, 2: 1, 3: 2, 4: 2, 5: 3, 6: 3}  # 7+ → 4
-
-
 _NEXT_QUESTION_PROMPT = "Ask the next interview question."
-
-
-def _init_tracker() -> dict:
-    """Create a fresh performance tracker."""
-    return {
-        "scores": [],           # per-question score (1-10)
-        "tiers": [],            # tier index used for each question
-        "current_tier": 0,      # current difficulty tier (0-4)
-        "consecutive_strong": 0,  # streak of scores >= 7
-        "consecutive_weak": 0,    # streak of scores <= 4
-    }
-
-
-def _compute_adaptive_tier(tracker: dict, q_num: int) -> int:
-    """Determine the difficulty tier for the next question based on performance.
-
-    Rules (GRE-style stability):
-    - Tier UP:   2+ consecutive scores >= 7  →  advance one tier (max 4)
-    - Tier DOWN: 2+ consecutive scores <= 4  →  drop one tier (min 0)
-    - STAY:      everything else             →  keep current tier
-
-    For questions 1-2 (before any scores exist), use the default progression.
-    """
-    has_scores = len(tracker.get("scores", [])) > 0
-
-    # Only use defaults when there's no performance data yet
-    if not has_scores and q_num <= 2:
-        return _DEFAULT_TIER_BY_QUESTION.get(q_num, 0)
-
-    current = tracker.get("current_tier", 1)
-
-    if tracker.get("consecutive_strong", 0) >= 2:
-        return min(current + 1, 4)
-    if tracker.get("consecutive_weak", 0) >= 2:
-        return max(current - 1, 0)
-
-    return current
-
-
-def _update_tracker(tracker: dict | None, score: int, tier_used: int) -> dict:
-    """Update the performance tracker with a new score. Returns updated tracker."""
-    if tracker is None:
-        tracker = _init_tracker()
-
-    tracker = {**tracker}  # shallow copy to avoid mutating state
-    tracker["scores"] = tracker.get("scores", []) + [score]
-    tracker["tiers"] = tracker.get("tiers", []) + [tier_used]
-
-    # Update streaks
-    if score >= 7:
-        tracker["consecutive_strong"] = tracker.get("consecutive_strong", 0) + 1
-        tracker["consecutive_weak"] = 0
-    elif score <= 4:
-        tracker["consecutive_weak"] = tracker.get("consecutive_weak", 0) + 1
-        tracker["consecutive_strong"] = 0
-    else:
-        tracker["consecutive_strong"] = 0
-        tracker["consecutive_weak"] = 0
-
-    # Compute next tier
-    next_q = len(tracker["scores"]) + 1
-    tracker["current_tier"] = _compute_adaptive_tier(tracker, next_q)
-
-    return tracker
-
-
-def _get_difficulty_for_tier(tier_index: int) -> tuple[str, str]:
-    """Return (tier_name, guidance) for a given tier index."""
-    tier = _DIFFICULTY_TIERS[min(tier_index, len(_DIFFICULTY_TIERS) - 1)]
-    return tier["name"], tier["guidance"]
-
-
-def tier_name(tier_index: int) -> str:
-    """Display name of a difficulty tier, clamped to the valid range."""
-    return _get_difficulty_for_tier(max(tier_index, 0))[0]
 
 
 def _build_messages(
@@ -205,22 +118,7 @@ async def interviewer_node(state: GraphState) -> dict:
     angles = _QUESTION_ANGLES.get(interview_type, _QUESTION_ANGLES["mixed"])
     random_angle = random.choice(angles)
 
-    # Adaptive difficulty: use tracker if available, else default progression
-    tracker = state.get("performance_tracker") or _init_tracker()
-    tier_index = tracker.get("current_tier", _DEFAULT_TIER_BY_QUESTION.get(q_num, min(q_num - 1, 4)))
-    tier_name, tier_guidance = _get_difficulty_for_tier(tier_index)
-
-    # Build adaptive context for the prompt
-    adaptive_context = ""
-    scores = tracker.get("scores", [])
-    if scores:
-        avg = sum(scores) / len(scores)
-        trend = "improving" if len(scores) >= 2 and scores[-1] > scores[-2] else (
-            "declining" if len(scores) >= 2 and scores[-1] < scores[-2] else "stable"
-        )
-        adaptive_context = f"""
-The candidate's performance so far: average score {avg:.1f}/10, trend is {trend}.
-{"The candidate is performing strongly — challenge them with harder, more nuanced questions." if avg >= 7 else ""}{"The candidate is struggling — ask a question that lets them demonstrate knowledge without overwhelming complexity." if avg <= 4 else ""}"""
+    difficulty = Difficulty(state.get("scores") or [])
 
     system_prompt = f"""You are a senior engineer on the hiring committee, interviewing a candidate for a {job} position. You have 10+ years of industry experience and you've conducted hundreds of interviews. You're friendly but rigorous — you want to see how candidates actually think, not just whether they can recite textbook answers.
 
@@ -229,8 +127,7 @@ This is question {q_num} of the interview (target: ~{total} questions, but the c
 ## Interview Focus
 {type_guidance}
 
-## Difficulty Level: {tier_name}
-{tier_guidance}{adaptive_context}
+{difficulty.brief()}
 
 ## Opening Angle (for this question)
 Start with a question exploring: **{random_angle}**. This is a suggestion to ensure variety — adapt it to the candidate's background and the conversation so far.
@@ -370,9 +267,7 @@ async def evaluator_node(state: GraphState) -> dict:
     job = state["job_position"]
     max_words = settings.max_evaluator_words
     q_num = state["questions_asked"] + 1
-    tracker = state.get("performance_tracker") or _init_tracker()
-    tier_index = tracker.get("current_tier", _DEFAULT_TIER_BY_QUESTION.get(q_num, min(q_num - 1, 4)))
-    tier_name, _ = _get_difficulty_for_tier(tier_index)
+    difficulty = Difficulty(state.get("scores") or [])
 
     # Step 1: Get the text feedback (shown to user)
     feedback_prompt = f"""You are a career coach evaluating interview answers for a {job} position.
@@ -422,17 +317,15 @@ Return ONLY a JSON object: {{"score": <1-10>}}"""
         logger.warning("Failed to parse evaluator score, defaulting to 5")
         score = 5
 
-    # Update the performance tracker
-    updated_tracker = _update_tracker(tracker, score, tier_index)
+    updated = difficulty.record(score)
     logger.info("Q%d score=%d, tier=%s, next_tier=%s",
-                q_num, score, tier_name,
-                _DIFFICULTY_TIERS[updated_tracker["current_tier"]]["name"])
+                q_num, score, updated.curve()[-1]["tier"], updated.tier.name)
 
     return {
         "messages": [AIMessage(content=feedback_response or "Good attempt. Try to be more specific with concrete examples.", name="evaluator")],
         "questions_asked": q_num,
         "current_phase": "interviewer",
-        "performance_tracker": updated_tracker,
+        "scores": list(updated.scores),
     }
 
 
@@ -440,8 +333,6 @@ async def summary_node(state: GraphState) -> dict:
     """Generate a structured scorecard summarizing the interview."""
     job = state["job_position"]
     resume = state.get("resume_text", "")
-    tracker = state.get("performance_tracker") or _init_tracker()
-
     resume_analysis_block = ""
     resume_json_field = ""
     if resume:
@@ -494,20 +385,8 @@ Return ONLY valid JSON with this exact structure:
             "overall_summary": response[:300],
         }
 
-    # Attach difficulty curve data (not from LLM — computed from tracker)
-    scores = tracker.get("scores", [])
-    tiers = tracker.get("tiers", [])
-    difficulty_curve = []
-    for i in range(len(scores)):
-        tier_idx = tiers[i] if i < len(tiers) else 0
-        tier_info = _DIFFICULTY_TIERS[min(tier_idx, len(_DIFFICULTY_TIERS) - 1)]
-        difficulty_curve.append({
-            "question": i + 1,
-            "score": scores[i],
-            "tier": tier_info["name"],
-            "tier_index": tier_idx,
-        })
-    summary_data["difficulty_curve"] = difficulty_curve
+    # Attach difficulty curve data (not from LLM — computed from the scores)
+    summary_data["difficulty_curve"] = Difficulty(state.get("scores") or []).curve()
 
     return {
         "messages": [AIMessage(content=response, name="summary")],

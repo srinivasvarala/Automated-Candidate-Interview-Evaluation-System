@@ -17,8 +17,8 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.types import Command
 
 from app import database
-from app.agents import tier_name
 from app.config import settings
+from app.difficulty import Difficulty
 
 logger = logging.getLogger(__name__)
 
@@ -162,7 +162,7 @@ class InterviewSession:
             "current_phase": "interviewer",
             "end_requested": False,
             "summary_data": None,
-            "performance_tracker": None,
+            "scores": [],
         }
         queue = self._begin_turn(initial_state)
         yield Started(
@@ -331,15 +331,15 @@ class InterviewSession:
     @staticmethod
     def _agent_message(msg: AIMessage, updates: dict) -> AgentMessage:
         if msg.name == "evaluator":
-            tracker = updates.get("performance_tracker")
-            if tracker and tracker.get("scores"):
-                tier_index = tracker["tiers"][-1] if tracker.get("tiers") else 0
+            scores = updates.get("scores")
+            if scores:
+                latest = Difficulty(scores).curve()[-1]
                 return AgentMessage(
                     source=msg.name,
                     content=msg.content,
-                    score=tracker["scores"][-1],
-                    tier=tier_name(tier_index),
-                    tier_index=tier_index,
+                    score=latest["score"],
+                    tier=latest["tier"],
+                    tier_index=latest["tier_index"],
                 )
         return AgentMessage(source=msg.name, content=msg.content)
 

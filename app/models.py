@@ -19,7 +19,7 @@ class GraphState(TypedDict):
     current_phase: str  # "interviewer" | "candidate" | "evaluator" | "summary"
     end_requested: bool
     summary_data: dict[str, Any] | None
-    performance_tracker: dict[str, Any] | None  # adaptive difficulty state
+    scores: list[int]  # Evaluator score (1-10) per answered question
 
 
 # --- WebSocket Message Models ---

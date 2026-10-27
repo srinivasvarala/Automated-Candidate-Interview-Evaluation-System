@@ -8,9 +8,6 @@ from app.agents import (
     evaluator_node,
     summary_node,
     _build_messages,
-    _compute_adaptive_tier,
-    _update_tracker,
-    _init_tracker,
     _clean_evaluator_response,
 )
 
@@ -100,15 +97,12 @@ class TestEvaluatorNode:
         assert result["current_phase"] == "interviewer"
 
     @pytest.mark.asyncio
-    async def test_updates_performance_tracker(self, state_with_conversation, mock_llm_response, mock_llm_score_response):
+    async def test_records_the_score(self, state_with_conversation, mock_llm_response, mock_llm_score_response):
         with patch("app.agents.llm_service.complete", mock_llm_response), \
              patch("app.agents.llm_service.complete_json", mock_llm_score_response):
             result = await evaluator_node(state_with_conversation)
 
-        tracker = result["performance_tracker"]
-        assert tracker is not None
-        assert tracker["scores"] == [7]
-        assert len(tracker["tiers"]) == 1
+        assert result["scores"] == [7]
 
     @pytest.mark.asyncio
     async def test_handles_bad_score_json(self, state_with_conversation, mock_llm_response):
@@ -118,7 +112,7 @@ class TestEvaluatorNode:
             result = await evaluator_node(state_with_conversation)
 
         # Should default to score 5
-        assert result["performance_tracker"]["scores"] == [5]
+        assert result["scores"] == [5]
 
 
 class TestSummaryNode:
@@ -147,65 +141,6 @@ class TestSummaryNode:
 
         assert isinstance(result["messages"][0], AIMessage)
         assert result["messages"][0].name == "summary"
-
-
-class TestAdaptiveDifficulty:
-    def test_init_tracker(self):
-        tracker = _init_tracker()
-        assert tracker["scores"] == []
-        assert tracker["tiers"] == []
-        assert tracker["current_tier"] == 0
-        assert tracker["consecutive_strong"] == 0
-        assert tracker["consecutive_weak"] == 0
-
-    def test_default_tier_for_early_questions(self):
-        tracker = _init_tracker()
-        assert _compute_adaptive_tier(tracker, 1) == 0  # warm-up
-        assert _compute_adaptive_tier(tracker, 2) == 1  # foundation
-
-    def test_tier_up_after_two_strong(self):
-        tracker = {"scores": [], "tiers": [], "current_tier": 2,
-                    "consecutive_strong": 0, "consecutive_weak": 0}
-        tracker = _update_tracker(tracker, 8, 2)  # strong
-        tracker = _update_tracker(tracker, 7, 2)  # strong again → should tier up
-        assert tracker["consecutive_strong"] == 2
-        assert tracker["current_tier"] == 3  # went from 2 → 3
-
-    def test_tier_down_after_two_weak(self):
-        tracker = {"scores": [], "tiers": [], "current_tier": 3,
-                    "consecutive_strong": 0, "consecutive_weak": 0}
-        tracker = _update_tracker(tracker, 3, 3)  # weak
-        tracker = _update_tracker(tracker, 4, 3)  # weak again → should tier down
-        assert tracker["consecutive_weak"] == 2
-        assert tracker["current_tier"] <= 2
-
-    def test_tier_stays_on_mixed_scores(self):
-        tracker = {"scores": [], "tiers": [], "current_tier": 2,
-                    "consecutive_strong": 0, "consecutive_weak": 0}
-        tracker = _update_tracker(tracker, 6, 2)  # mid
-        assert tracker["consecutive_strong"] == 0
-        assert tracker["consecutive_weak"] == 0
-        assert tracker["current_tier"] == 2
-
-    def test_tier_capped_at_max(self):
-        tracker = {"scores": [], "tiers": [], "current_tier": 4,
-                    "consecutive_strong": 2, "consecutive_weak": 0}
-        tracker = _update_tracker(tracker, 9, 4)  # strong but already at max
-        assert tracker["current_tier"] <= 4
-
-    def test_tier_floored_at_zero(self):
-        tracker = {"scores": [], "tiers": [], "current_tier": 0,
-                    "consecutive_strong": 0, "consecutive_weak": 2}
-        tracker = _update_tracker(tracker, 2, 0)  # weak but already at min
-        assert tracker["current_tier"] >= 0
-
-    def test_streak_resets_on_mid_score(self):
-        tracker = _init_tracker()
-        tracker = _update_tracker(tracker, 8, 0)  # strong
-        assert tracker["consecutive_strong"] == 1
-        tracker = _update_tracker(tracker, 5, 1)  # mid → resets streak
-        assert tracker["consecutive_strong"] == 0
-        assert tracker["consecutive_weak"] == 0
 
 
 class TestCleanEvaluatorResponse:

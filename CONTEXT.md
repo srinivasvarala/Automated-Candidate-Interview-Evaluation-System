@@ -24,12 +24,25 @@ _Avoid_: summary, report
 The two roles that speak. The Interviewer asks; the Evaluator gives feedback and a hidden 1-10 score that drives difficulty.
 _Avoid_: agent, bot, coach
 
+**Score**:
+The Evaluator's hidden 1-10 rating of one answer. It is not the headline number the candidate sees; it drives the next Tier.
+_Avoid_: grade, rating
+
+**Strong answer / weak answer**:
+An answer with a Score of 7 or more / 4 or less.
+
+**Streak**:
+Consecutive strong (or weak) answers. A streak of two or more moves the next Tier up (or down) one step, and keeps moving it with each further answer in the streak.
+
 **Tier**:
-One of five difficulty levels (Warm-up, Foundation, Mid-level, Advanced, Expert) chosen from the candidate's recent scores.
-_Avoid_: level, difficulty (as a noun for the tier itself)
+One of five difficulty levels (Warm-up, Foundation, Mid-level, Advanced, Expert) chosen from the candidate's Scores so far.
+_Avoid_: level
+
+**Difficulty**:
+The module that turns the Scores so far into the next Tier, the prompt brief for the Interviewer, and the per-question curve on the Scorecard. Not a synonym for Tier.
 
 ## Relationships
 
 - An **Interview session** has many **Turns**; its **Transcript** is the messages of all Turns.
 - An **Interview session** ends with exactly one **Scorecard** unless it is `abandoned`.
-- The **Evaluator's** score for a **Turn** decides the **Tier** of the next **Turn**.
+- The **Evaluator's** **Score** for a **Turn** decides the **Tier** of the next **Turn**, through **Difficulty**.
