@@ -4,7 +4,7 @@ import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Query, UploadFile, File
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from langchain_core.messages import HumanMessage, AIMessage
@@ -53,21 +53,21 @@ async def health():
 async def upload_resume(file: UploadFile = File(...)):
     """Parse an uploaded resume (PDF or text) and return extracted text."""
     if not file.filename:
-        return {"error": "No file provided"}, 400
+        return JSONResponse({"error": "No file provided"}, status_code=400)
 
     contents = await file.read()
     if len(contents) > 5 * 1024 * 1024:  # 5 MB limit
-        return {"error": "File too large. Maximum 5 MB."}, 400
+        return JSONResponse({"error": "File too large. Maximum 5 MB."}, status_code=400)
 
     try:
         text = resume_parser.extract_text(contents, file.filename)
         logger.info("Resume parsed: %d chars from %s", len(text), file.filename)
         return {"text": text, "filename": file.filename, "chars": len(text)}
     except ValueError as e:
-        return {"error": str(e)}, 400
+        return JSONResponse({"error": str(e)}, status_code=400)
     except Exception as e:
         logger.error("Resume parse failed: %s", e)
-        return {"error": "Failed to parse resume. Please try a different file."}, 500
+        return JSONResponse({"error": "Failed to parse resume. Please try a different file."}, status_code=500)
 
 
 # --- Interview History REST API ---
@@ -85,7 +85,7 @@ async def api_list_interviews(
 async def api_get_interview(interview_id: str):
     interview = await database.get_interview(interview_id)
     if not interview:
-        return {"error": "Interview not found"}, 404
+        return JSONResponse({"error": "Interview not found"}, status_code=404)
     return interview
 
 

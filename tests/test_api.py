@@ -33,6 +33,24 @@ class TestIndexEndpoint:
         assert "AI Interview Coach" in response.text
 
 
+class TestErrorStatusCodes:
+    def test_unsupported_resume_type_returns_400(self, client):
+        response = client.post("/api/upload-resume", files={"file": ("cv.docx", b"x")})
+        assert response.status_code == 400
+        assert "Unsupported" in response.json()["error"]
+
+    def test_oversized_resume_returns_400(self, client):
+        big = b"a" * (5 * 1024 * 1024 + 1)
+        response = client.post("/api/upload-resume", files={"file": ("cv.txt", big)})
+        assert response.status_code == 400
+
+    def test_unknown_interview_returns_404(self, client):
+        with patch("app.main.database.get_interview", new=AsyncMock(return_value=None)):
+            response = client.get("/api/interviews/nope")
+        assert response.status_code == 404
+        assert response.json()["error"] == "Interview not found"
+
+
 class TestWebSocketInterview:
     def test_rejects_empty_job_position(self, client):
         with client.websocket_connect("/ws/interview") as ws:

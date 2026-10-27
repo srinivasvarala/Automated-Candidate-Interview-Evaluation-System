@@ -301,6 +301,7 @@ function interviewApp() {
         async viewHistoryDetail(id) {
             try {
                 const res = await fetch(`/api/interviews/${id}`);
+                if (!res.ok) return;
                 const interview = await res.json();
                 if (interview.summary_data) {
                     this.jobRole = interview.job_position;
@@ -336,8 +337,8 @@ function interviewApp() {
                     body: formData,
                 });
                 const data = await res.json();
-                if (data.error) {
-                    this.resumeError = data.error;
+                if (!res.ok || data.error) {
+                    this.resumeError = data.error || 'Failed to upload resume. Please try again.';
                 } else {
                     this.resumeText = data.text;
                     this.resumeFilename = data.filename;
