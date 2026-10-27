@@ -1,5 +1,6 @@
 """Interview session tests: real graph, scripted LLM, temp SQLite."""
 
+import asyncio
 from unittest.mock import patch
 
 import pytest
@@ -121,7 +122,7 @@ async def test_answer_before_start_is_rejected(interview):
     assert kinds(events) == ["Error"]
 
 
-async def test_graph_failure_is_fatal_and_leaves_interview_in_progress(interview):
+async def test_graph_failure_is_fatal_and_marks_interview_abandoned(interview):
     async def boom(messages, temperature=0.7):
         raise RuntimeError("provider down")
 
@@ -130,4 +131,78 @@ async def test_graph_failure_is_fatal_and_leaves_interview_in_progress(interview
     assert kinds(events)[-1] == "Error"
     assert events[-1].fatal
     assert "provider down" not in events[-1].content
-    assert (await database.get_interview(interview.id))["status"] == "in_progress"
+    assert (await database.get_interview(interview.id))["status"] == "abandoned"
+    assert interview.status == "failed"
+
+
+# --- Lifecycle: detached turns, resume, takeover ---
+
+async def test_turn_survives_a_dropped_client_and_resume_replays_it(interview):
+    await collect(interview.start("SWE"))
+
+    events = interview.answer("My answer")
+    assert type(await events.__anext__()).__name__ == "Typing"
+    await events.aclose()  # client drops mid-turn
+    interview.detach()
+    await interview.idle()
+
+    saved = await database.get_interview(interview.id)
+    assert len(saved["messages"]) == 4  # the turn finished and was saved anyway
+
+    resumed = await collect(interview.resume())
+    assert kinds(resumed) == ["Resumed", "WaitingForInput"]
+    history = resumed[0].messages
+    assert [(m["type"], m.get("source")) for m in history] == [
+        ("agent", "interviewer"), ("user", None), ("agent", "evaluator"), ("agent", "interviewer"),
+    ]
+    assert history[2]["metadata"]["score"] == 8
+    assert resumed[0].questions_answered == 1
+
+
+async def test_resume_during_a_running_turn_rejoins_without_duplicates(interview):
+    await collect(interview.start("SWE"))
+    gate = asyncio.Event()
+
+    async def slow_complete(messages, temperature=0.7):
+        await gate.wait()
+        return await fake_complete(messages, temperature)
+
+    with patch("app.agents.llm_service.complete", slow_complete):
+        first = interview.answer("My answer")
+        await first.__anext__()  # Typing; the turn is now blocked on the gate
+        interview.detach()
+        resumed = interview.resume()
+        head = [await resumed.__anext__(), await resumed.__anext__()]
+        assert kinds(head) == ["Resumed", "Typing"]
+        assert head[0].messages == [{"type": "agent", "source": "interviewer",
+                                     "content": "Describe a hard bug you fixed.", "metadata": {}}]
+        gate.set()
+        rest = [e async for e in resumed]
+    assert kinds(rest) == ["AgentMessage", "AgentMessage", "WaitingForInput"]
+    assert [e.source for e in rest[:2]] == ["evaluator", "interviewer"]
+
+
+async def test_resume_takes_over_from_the_previous_client(interview):
+    await collect(interview.start("SWE"))
+    old = interview.resume()
+    await old.__anext__()  # Resumed
+    await old.__anext__()  # WaitingForInput
+    new = await collect(interview.resume())
+    assert kinds(new) == ["Resumed", "WaitingForInput"]
+
+
+async def test_resume_after_completion_returns_the_scorecard(interview):
+    await collect(interview.start("SWE"))
+    await collect(interview.answer("a"))
+    await collect(interview.end())
+    resumed = await collect(interview.resume())
+    assert kinds(resumed) == ["Resumed", "Summary", "Complete"]
+    assert resumed[1].data["scores"]["technical"] == 7
+
+
+async def test_abandon_marks_interview_abandoned(interview):
+    await collect(interview.start("SWE"))
+    await interview.abandon()
+    assert interview.status == "abandoned"
+    assert (await database.get_interview(interview.id))["status"] == "abandoned"
+    assert kinds(await collect(interview.answer("late"))) == ["Error"]

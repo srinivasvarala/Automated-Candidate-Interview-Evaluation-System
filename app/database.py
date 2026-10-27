@@ -64,6 +64,17 @@ async def init_db():
     logger.info("Database initialized at %s", DB_PATH)
 
 
+async def mark_abandoned(interview_id: str) -> None:
+    """Mark one in-progress interview as abandoned."""
+    now = datetime.now(timezone.utc).isoformat()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE interviews SET status = 'abandoned', updated_at = ? WHERE id = ? AND status = 'in_progress'",
+            (now, interview_id),
+        )
+        await db.commit()
+
+
 async def abandon_in_progress() -> int:
     """Mark every in-progress interview as abandoned. Returns how many changed.
 

@@ -10,6 +10,7 @@ from app.graph import interview_graph
 from app.config import settings
 from app import database
 from app import session
+from app.registry import SessionRegistry
 from app import resume_parser
 
 # Configure logging
@@ -27,6 +28,8 @@ async def lifespan(app: FastAPI):
     logger.info("Application started, model=%s", settings.llm_model)
     yield
 
+
+registry = SessionRegistry()
 
 app = FastAPI(title="AI Interview Coach", lifespan=lifespan)
 
@@ -94,7 +97,16 @@ def _wire(event: session.Event) -> dict:
         case session.Started():
             return {
                 "type": "system_event", "event": "interview_started",
-                "content": event.content, "metadata": {"num_questions": event.num_questions},
+                "content": event.content,
+                "metadata": {"num_questions": event.num_questions, "session_id": event.session_id},
+            }
+        case session.Resumed():
+            return {
+                "type": "system_event", "event": "resumed", "content": "",
+                "metadata": {
+                    "session_id": event.session_id, "messages": event.messages,
+                    "num_questions": event.num_questions, "questions_answered": event.questions_answered,
+                },
             }
         case session.Typing():
             return {"type": "system_event", "event": "agent_typing"}
@@ -113,7 +125,10 @@ def _wire(event: session.Event) -> dict:
         case session.Complete():
             return {"type": "system_event", "event": "interview_complete"}
         case session.Error():
-            return {"type": "error", "content": event.content}
+            message = {"type": "error", "content": event.content}
+            if event.code:
+                message["code"] = event.code
+            return message
 
 
 async def _forward(ws: WebSocket, events) -> bool:
@@ -129,22 +144,39 @@ async def _forward(ws: WebSocket, events) -> bool:
 @app.websocket("/ws/interview")
 async def websocket_interview(websocket: WebSocket):
     await websocket.accept()
-    interview = session.InterviewSession(interview_graph)
+    interview = None
+    token = None
 
     try:
-        start_msg = json.loads(await websocket.receive_text())
-        ok = await _forward(websocket, interview.start(
-            job_position=start_msg.get("job_position", ""),
-            job_description=start_msg.get("job_description", ""),
-            resume_text=start_msg.get("resume_text", ""),
-            interview_type=start_msg.get("interview_type", "mixed"),
-        ))
-        if not ok:
+        first = json.loads(await websocket.receive_text())
+        if first.get("type") == "resume":
+            interview = registry.get(str(first.get("session_id", "")))
+            if interview is None:
+                await _forward(websocket, _single(session.Error(
+                    "This interview has expired. Please start a new one.",
+                    fatal=True, code="session_not_found",
+                )))
+                await websocket.close()
+                return
+            token = registry.claim(interview)
+            events = interview.resume()
+        else:
+            interview = session.InterviewSession(interview_graph)
+            token = registry.add(interview)
+            events = interview.start(
+                job_position=first.get("job_position", ""),
+                job_description=first.get("job_description", ""),
+                resume_text=first.get("resume_text", ""),
+                interview_type=first.get("interview_type", "mixed"),
+            )
+        if not await _forward(websocket, events):
             await websocket.close()
             return
 
-        while interview.awaiting_input:
+        while interview.awaiting_input and registry.owns(interview, token):
             msg = json.loads(await websocket.receive_text())
+            if not registry.owns(interview, token):
+                break  # another client took over while we were waiting
             if msg.get("type") == "end_interview":
                 events = interview.end()
             else:
@@ -154,12 +186,19 @@ async def websocket_interview(websocket: WebSocket):
                 return
 
     except WebSocketDisconnect:
-        logger.info("[%s] Client disconnected", interview.id)
+        logger.info("Client disconnected: %s", interview.id if interview else "-")
     except Exception as e:
-        logger.error("[%s] Error: %s", interview.id, e, exc_info=True)
+        logger.error("WebSocket error: %s", e, exc_info=True)
         try:
             await websocket.send_text(json.dumps({
                 "type": "error", "content": "Something went wrong. Please try again.",
             }))
         except Exception:
             pass
+    finally:
+        if interview is not None and token is not None:
+            registry.release(interview, token)
+
+
+async def _single(event):
+    yield event

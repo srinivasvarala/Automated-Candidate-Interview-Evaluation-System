@@ -127,3 +127,41 @@ class TestWebSocketInterview:
             assert summary["type"] == "summary"
             assert summary["metadata"]["scores"] == {"technical": 9}
             assert recv(ws)["event"] == "interview_complete"
+
+    def test_resume_after_disconnect_replays_the_interview(self):
+        async def complete(messages, temperature=0.7):
+            return "Feedback." if "career coach" in messages[0]["content"] else "A question?"
+
+        async def complete_json(messages, temperature=0.3):
+            return '{"score": 6}'
+
+        def recv(ws):
+            return json.loads(ws.receive_text())
+
+        with patch("app.agents.llm_service.complete", complete), \
+             patch("app.agents.llm_service.complete_json", complete_json), \
+             TestClient(app) as client:
+            with client.websocket_connect("/ws/interview") as ws:
+                ws.send_text(json.dumps({"job_position": "Engineer"}))
+                session_id = recv(ws)["metadata"]["session_id"]
+                while recv(ws).get("event") != "waiting_for_input":
+                    pass
+            # socket closed: the session stays alive for resume
+
+            with client.websocket_connect("/ws/interview") as ws:
+                ws.send_text(json.dumps({"type": "resume", "session_id": session_id}))
+                resumed = recv(ws)
+                assert resumed["event"] == "resumed"
+                assert [m["source"] for m in resumed["metadata"]["messages"]] == ["interviewer"]
+                assert recv(ws)["event"] == "waiting_for_input"
+
+                ws.send_text(json.dumps({"type": "user_input", "content": "Answer after resume"}))
+                assert recv(ws)["event"] == "agent_typing"
+                assert recv(ws)["source"] == "evaluator"
+
+    def test_resume_unknown_session_reports_expired(self, client):
+        with client.websocket_connect("/ws/interview") as ws:
+            ws.send_text(json.dumps({"type": "resume", "session_id": "nope"}))
+            data = json.loads(ws.receive_text())
+            assert data["type"] == "error"
+            assert data["code"] == "session_not_found"
