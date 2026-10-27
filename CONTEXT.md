@@ -8,6 +8,10 @@ A mock-interview app. A candidate picks a role, answers questions from an AI Int
 One run of the app from setup to Scorecard, identified by a session id (also the graph `thread_id`). Has a status: `in_progress`, `completed` or `abandoned`.
 _Avoid_: interview (ambiguous with the saved record), conversation, chat
 
+**Interview connection**:
+The browser-side module that holds the WebSocket to one Interview session and the saved session id. It sends answers, reconnects with backoff, resumes after a refresh, and turns server events into the state the screens show. Not the same as the server's Interview session.
+_Avoid_: client, socket
+
 **Turn**:
 One question from the Interviewer, the candidate's answer, and the Evaluator's feedback.
 _Avoid_: round, exchange

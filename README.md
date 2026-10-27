@@ -162,7 +162,9 @@ app/
 └── resume_parser.py   # PDF/text resume extraction
 
 static/
-├── app.js             # Alpine.js application — 4 screens (setup, chat, summary, history)
+├── js/
+│   ├── app.js                    # Alpine.js application — 4 screens (setup, chat, summary, history)
+│   └── interview-connection.js   # WebSocket, reconnect and resume logic (tested with node --test)
 └── style.css          # Design system with CSS custom properties, responsive layout
 
 templates/
