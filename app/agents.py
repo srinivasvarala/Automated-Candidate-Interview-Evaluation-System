@@ -133,6 +133,11 @@ def _get_difficulty_for_tier(tier_index: int) -> tuple[str, str]:
     return tier["name"], tier["guidance"]
 
 
+def tier_name(tier_index: int) -> str:
+    """Display name of a difficulty tier, clamped to the valid range."""
+    return _get_difficulty_for_tier(max(tier_index, 0))[0]
+
+
 def _build_messages(state: GraphState, system_prompt: str) -> list[dict]:
     """Convert graph state messages + a system prompt into LiteLLM format."""
     msgs = [{"role": "system", "content": system_prompt}]

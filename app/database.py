@@ -83,43 +83,56 @@ async def abandon_in_progress() -> int:
     return count
 
 
-async def save_interview(
+async def create_interview(
     interview_id: str,
     job_position: str,
     job_description: str,
     interview_type: str,
-    questions_asked: int,
-    summary_data: dict | None,
-    messages: list[dict],
-):
-    """Save a completed interview to the database."""
+) -> None:
+    """Insert a new in-progress interview."""
     now = datetime.now(timezone.utc).isoformat()
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
-            """INSERT OR REPLACE INTO interviews
-               (id, job_position, job_description, interview_type, questions_asked, summary_data,
-                created_at, completed_at, status, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?)""",
-            (
-                interview_id,
-                job_position,
-                job_description,
-                interview_type,
-                questions_asked,
-                json.dumps(summary_data) if summary_data else None,
-                now,
-                now,
-                now,
-            ),
+            """INSERT INTO interviews
+               (id, job_position, job_description, interview_type, questions_asked,
+                created_at, status, updated_at)
+               VALUES (?, ?, ?, ?, 0, ?, 'in_progress', ?)""",
+            (interview_id, job_position, job_description, interview_type, now, now),
         )
+        await db.commit()
+    logger.info("Created interview %s", interview_id)
+
+
+async def append_messages(interview_id: str, messages: list[dict], questions_asked: int) -> None:
+    """Append transcript messages after a turn and record progress."""
+    now = datetime.now(timezone.utc).isoformat()
+    async with aiosqlite.connect(DB_PATH) as db:
         for msg in messages:
             await db.execute(
                 """INSERT INTO messages (interview_id, role, name, content, created_at)
                    VALUES (?, ?, ?, ?, ?)""",
                 (interview_id, msg["role"], msg.get("name", ""), msg["content"], now),
             )
+        await db.execute(
+            "UPDATE interviews SET questions_asked = ?, updated_at = ? WHERE id = ?",
+            (questions_asked, now, interview_id),
+        )
         await db.commit()
-    logger.info("Saved interview %s to database", interview_id)
+
+
+async def finish_interview(interview_id: str, questions_asked: int, summary_data: dict | None) -> None:
+    """Mark an interview completed and store its scorecard."""
+    now = datetime.now(timezone.utc).isoformat()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """UPDATE interviews
+               SET status = 'completed', questions_asked = ?, summary_data = ?,
+                   completed_at = ?, updated_at = ?
+               WHERE id = ?""",
+            (questions_asked, json.dumps(summary_data) if summary_data else None, now, now, interview_id),
+        )
+        await db.commit()
+    logger.info("Completed interview %s", interview_id)
 
 
 async def list_interviews(limit: int = 20, offset: int = 0) -> list[dict]:

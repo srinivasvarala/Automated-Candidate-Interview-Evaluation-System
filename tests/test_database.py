@@ -9,7 +9,7 @@ pytestmark = pytest.mark.asyncio
 
 @pytest.fixture
 def db_path(tmp_path, monkeypatch):
-    path = tmp_path / "test.db"
+    path = tmp_path / "database-under-test.db"
     monkeypatch.setattr(database, "DB_PATH", path)
     return path
 
@@ -49,10 +49,22 @@ async def test_init_migrates_legacy_database_as_completed(db_path):
     assert interview["updated_at"] == "2026-01-02"
 
 
-async def test_save_interview_marks_completed(db_path):
+async def test_interview_lifecycle(db_path):
     await database.init_db()
-    await database.save_interview("a", "SWE", "", "mixed", 1, None, [])
-    assert (await database.get_interview("a"))["status"] == "completed"
+    await database.create_interview("a", "SWE", "", "mixed")
+    started = await database.get_interview("a")
+    assert started["status"] == "in_progress"
+    assert started["completed_at"] is None
+
+    await database.append_messages("a", [{"role": "assistant", "name": "interviewer", "content": "Q1"}], 0)
+    await database.append_messages("a", [{"role": "user", "name": "candidate", "content": "A1"}], 1)
+    await database.finish_interview("a", 1, {"scores": {"technical": 7}})
+
+    done = await database.get_interview("a")
+    assert done["status"] == "completed"
+    assert done["questions_asked"] == 1
+    assert done["summary_data"] == {"scores": {"technical": 7}}
+    assert [m["content"] for m in done["messages"]] == ["Q1", "A1"]
     listed = await database.list_interviews()
     assert listed[0]["status"] == "completed"
     assert listed[0]["updated_at"]

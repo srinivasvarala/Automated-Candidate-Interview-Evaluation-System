@@ -11,6 +11,17 @@ os.environ["NUM_QUESTIONS"] = "3"
 from langchain_core.messages import AIMessage, HumanMessage
 
 
+@pytest.fixture(autouse=True)
+def isolated_db(tmp_path, monkeypatch):
+    """Point the database at a throwaway file so tests never touch interviews.db."""
+    import asyncio
+
+    from app import database
+
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "test.db")
+    asyncio.run(database.init_db())
+
+
 @pytest.fixture
 def sample_state():
     """Return a minimal GraphState for testing."""

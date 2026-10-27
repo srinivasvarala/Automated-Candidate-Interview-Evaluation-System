@@ -91,3 +91,39 @@ class TestWebSocketInterview:
                 assert data["type"] == "system_event"
                 assert data["event"] == "interview_started"
                 assert data["metadata"]["num_questions"] > 0
+
+    def test_full_interview_wire_format(self, client):
+        async def complete(messages, temperature=0.7):
+            return "Feedback. 💡 **Stronger answer:** More detail." if "career coach" in messages[0]["content"] else "A question?"
+
+        async def complete_json(messages, temperature=0.3):
+            if "Rate the candidate" in messages[0]["content"]:
+                return '{"score": 9}'
+            return '{"scores": {"technical": 9}, "strengths": [], "improvements": [], "overall_summary": "ok"}'
+
+        def recv(ws):
+            return json.loads(ws.receive_text())
+
+        with patch("app.agents.llm_service.complete", complete), \
+             patch("app.agents.llm_service.complete_json", complete_json), \
+             client.websocket_connect("/ws/interview") as ws:
+            ws.send_text(json.dumps({"job_position": "Engineer"}))
+            assert recv(ws)["event"] == "interview_started"
+            assert recv(ws)["event"] == "agent_typing"
+            assert recv(ws)["source"] == "interviewer"
+            assert recv(ws)["event"] == "waiting_for_input"
+
+            ws.send_text(json.dumps({"type": "user_input", "content": "My answer"}))
+            assert recv(ws)["event"] == "agent_typing"
+            feedback = recv(ws)
+            assert feedback["source"] == "evaluator"
+            assert feedback["metadata"] == {"score": 9, "tier": "Warm-up", "tier_index": 0}
+            assert recv(ws)["source"] == "interviewer"
+            assert recv(ws)["event"] == "waiting_for_input"
+
+            ws.send_text(json.dumps({"type": "end_interview"}))
+            assert recv(ws)["event"] == "agent_typing"
+            summary = recv(ws)
+            assert summary["type"] == "summary"
+            assert summary["metadata"]["scores"] == {"technical": 9}
+            assert recv(ws)["event"] == "interview_complete"
