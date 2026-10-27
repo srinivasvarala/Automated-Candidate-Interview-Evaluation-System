@@ -674,6 +674,8 @@ button:focus-visible { box-shadow: 0 0 0 3px var(--primary-glow); }
 .status-live .status-dot { background: #10b981; box-shadow: 0 0 6px rgba(16, 185, 129, 0.4); animation: statusPulse 2s ease infinite; }
 .status-done { color: var(--primary); }
 .status-done .status-dot { background: var(--primary); }
+.status-reconnecting { color: #f59e0b; }
+.status-reconnecting .status-dot { background: #f59e0b; animation: statusPulse 1s ease infinite; }
 .status-disconnected { color: var(--text-muted); }
 .status-disconnected .status-dot { background: var(--text-muted); }
 
@@ -1376,4 +1378,33 @@ button:focus-visible { box-shadow: 0 0 0 3px var(--primary-glow); }
 
 @media (max-width: 380px) {
     .type-selector { grid-template-columns: 1fr; }
+}
+
+/* Resume, history status and unfinished-interview note */
+.setup-notice {
+    margin: 0 0 1rem;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    background: #fffbeb;
+    border: 1px solid #fcd34d;
+    color: #92400e;
+    font-size: 0.875rem;
+}
+
+.history-status-badge {
+    margin-left: auto;
+    padding: 0.125rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 600;
+}
+.history-status-completed { background: #d1fae5; color: #065f46; }
+.history-status-in_progress { background: #dbeafe; color: #1e40af; }
+.history-status-abandoned { background: #f3f4f6; color: #6b7280; }
+
+#unfinished-note {
+    padding: 1.25rem 1.5rem;
+    text-align: center;
+    color: var(--text-muted);
+    border-top: 1px solid var(--border, #e5e7eb);
 }

@@ -128,6 +128,8 @@ def _wire(event: session.Event) -> dict:
             message = {"type": "error", "content": event.content}
             if event.code:
                 message["code"] = event.code
+            if event.fatal:
+                message["fatal"] = True
             return message
 
 

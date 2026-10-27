@@ -30,22 +30,52 @@ function interviewApp() {
         resumeError: '',
         historyItems: [],
         historyLoading: false,
+        sessionId: null,
+        reconnecting: false,
+        reconnectAttempts: 0,
+        reconnectTimer: null,
+        allowReconnect: false,
+        viewStatus: '',        // status of a past interview opened from history
+        setupNotice: '',
 
         get statusLabel() {
-            if (this.screen === 'summary') return 'Completed';
+            if (this.screen === 'summary') {
+                if (this.viewStatus === 'abandoned') return 'Abandoned';
+                if (this.viewStatus === 'in_progress') return 'Unfinished';
+                return 'Completed';
+            }
+            if (this.reconnecting) return 'Reconnecting\u2026';
             if (this.connected) return 'Live';
             return 'Disconnected';
         },
         get statusClass() {
-            if (this.screen === 'summary') return 'status-done';
+            if (this.screen === 'summary') {
+                return this.viewStatus === 'completed' || !this.viewStatus ? 'status-done' : 'status-disconnected';
+            }
+            if (this.reconnecting) return 'status-reconnecting';
             if (this.connected) return 'status-live';
             return 'status-disconnected';
+        },
+        get isUnfinishedView() {
+            return this.screen === 'summary' && !this.summaryData;
         },
         get overallScore() {
             if (!this.summaryData || !this.summaryData.scores) return 0;
             const scores = Object.values(this.summaryData.scores);
             if (scores.length === 0) return 0;
             return scores.reduce((a, b) => a + b, 0) / scores.length;
+        },
+
+        // Resume an interview that was in progress before a page refresh
+        init() {
+            const active = this.loadActive();
+            if (!active) return;
+            this.sessionId = active.sessionId;
+            this.jobRole = active.jobRole || '';
+            this.interviewType = active.interviewType || 'mixed';
+            this.screen = 'chat';
+            this.messages = [];
+            this.openSocket({ type: 'resume', session_id: this.sessionId });
         },
 
         // Actions
@@ -55,37 +85,97 @@ function interviewApp() {
             this.screen = 'chat';
             this.messages = [];
             this.summaryData = null;
+            this.viewStatus = '';
+            this.setupNotice = '';
+            this.sessionId = null;
 
+            this.openSocket({
+                job_position: this.jobRole,
+                job_description: this.jobDescription,
+                interview_type: this.interviewType,
+                resume_text: this.resumeText,
+            });
+        },
+
+        openSocket(firstMessage) {
             const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-            this.ws = new WebSocket(`${protocol}://${window.location.host}/ws/interview`);
+            const ws = new WebSocket(`${protocol}://${window.location.host}/ws/interview`);
+            this.ws = ws;
+            this.allowReconnect = true;
 
-            this.ws.onopen = () => {
+            ws.onopen = () => {
                 this.connected = true;
-                this.ws.send(JSON.stringify({
-                    job_position: this.jobRole,
-                    job_description: this.jobDescription,
-                    interview_type: this.interviewType,
-                    resume_text: this.resumeText,
-                }));
+                this.reconnecting = false;
+                this.reconnectAttempts = 0;
+                ws.send(JSON.stringify(firstMessage));
             };
 
-            this.ws.onmessage = (event) => {
+            ws.onmessage = (event) => {
                 const data = JSON.parse(event.data);
                 this.handleMessage(data);
             };
 
-            this.ws.onclose = () => {
+            ws.onclose = () => {
+                if (this.ws !== ws) return;  // replaced or reset
                 this.connected = false;
                 this.isTyping = false;
                 this.inputEnabled = false;
+                this.scheduleReconnect();
             };
+        },
 
-            this.ws.onerror = () => {
+        scheduleReconnect() {
+            if (!this.allowReconnect || this.screen !== 'chat') return;
+            if (!this.sessionId) {
+                // The connection dropped before the server created a session
+                this.allowReconnect = false;
                 this.messages.push({
                     type: 'system',
                     content: 'Connection error. Please refresh and try again.',
                 });
-            };
+                return;
+            }
+            if (this.reconnectAttempts >= 6) {
+                this.allowReconnect = false;
+                this.reconnecting = false;
+                this.messages.push({
+                    type: 'system',
+                    content: 'Connection lost. Refresh the page to try again.',
+                });
+                return;
+            }
+            const delay = Math.min(1000 * 2 ** this.reconnectAttempts, 15000);
+            this.reconnectAttempts++;
+            this.reconnecting = true;
+            this.reconnectTimer = setTimeout(
+                () => this.openSocket({ type: 'resume', session_id: this.sessionId }),
+                delay,
+            );
+        },
+
+        // The session id lives in sessionStorage so a refresh can pick the interview back up
+        saveActive() {
+            try {
+                sessionStorage.setItem('activeInterview', JSON.stringify({
+                    sessionId: this.sessionId,
+                    jobRole: this.jobRole,
+                    interviewType: this.interviewType,
+                }));
+            } catch (e) { /* storage unavailable: resume across refresh is skipped */ }
+        },
+
+        loadActive() {
+            try {
+                const raw = sessionStorage.getItem('activeInterview');
+                const active = raw ? JSON.parse(raw) : null;
+                return active && active.sessionId ? active : null;
+            } catch (e) {
+                return null;
+            }
+        },
+
+        clearActive() {
+            try { sessionStorage.removeItem('activeInterview'); } catch (e) { /* ignore */ }
         },
 
         handleMessage(data) {
@@ -108,6 +198,8 @@ function interviewApp() {
 
                 case 'summary':
                     this.isTyping = false;
+                    this.allowReconnect = false;
+                    this.clearActive();
                     this.summaryData = data.metadata || {};
                     this.screen = 'summary';
                     this.scrollToBottom();
@@ -115,6 +207,15 @@ function interviewApp() {
 
                 case 'error':
                     this.isTyping = false;
+                    if (data.code === 'session_not_found') {
+                        this.resetInterview();
+                        this.setupNotice = data.content;
+                        break;
+                    }
+                    if (data.fatal) {
+                        this.allowReconnect = false;
+                        this.clearActive();
+                    }
                     this.messages.push({
                         type: 'system',
                         content: 'Error: ' + data.content,
@@ -130,11 +231,38 @@ function interviewApp() {
                     if (data.metadata && data.metadata.num_questions) {
                         this.totalQuestions = data.metadata.num_questions;
                     }
+                    if (data.metadata && data.metadata.session_id) {
+                        this.sessionId = data.metadata.session_id;
+                        this.saveActive();
+                    }
                     this.messages.push({
                         type: 'system',
                         content: data.content,
                     });
                     break;
+
+                case 'resumed': {
+                    const meta = data.metadata || {};
+                    this.sessionId = meta.session_id || this.sessionId;
+                    this.totalQuestions = meta.num_questions || this.totalQuestions;
+                    this.questionsAnswered = meta.questions_answered || 0;
+                    this.messages = (meta.messages || []).map(m => m.type === 'user'
+                        ? { type: 'user', content: m.content }
+                        : {
+                            type: 'agent',
+                            source: m.source,
+                            sourceName: this.capitalize(m.source),
+                            content: m.content,
+                            metadata: m.metadata || {},
+                        });
+                    this.messages.push({
+                        type: 'system',
+                        content: 'Reconnected. Continuing your interview.',
+                    });
+                    this.screen = 'chat';
+                    this.scrollToBottom();
+                    break;
+                }
 
                 case 'agent_typing':
                     this.isTyping = true;
@@ -225,10 +353,19 @@ function interviewApp() {
         },
 
         resetInterview() {
+            this.allowReconnect = false;
+            clearTimeout(this.reconnectTimer);
+            this.clearActive();
             if (this.ws) {
-                this.ws.close();
-                this.ws = null;
+                const ws = this.ws;
+                this.ws = null;  // so its onclose does not try to reconnect
+                ws.close();
             }
+            this.sessionId = null;
+            this.reconnecting = false;
+            this.reconnectAttempts = 0;
+            this.viewStatus = '';
+            this.setupNotice = '';
             this.screen = 'setup';
             this.messages = [];
             this.summaryData = null;
@@ -303,18 +440,20 @@ function interviewApp() {
                 const res = await fetch(`/api/interviews/${id}`);
                 if (!res.ok) return;
                 const interview = await res.json();
-                if (interview.summary_data) {
-                    this.jobRole = interview.job_position;
-                    this.summaryData = interview.summary_data;
-                    this.screen = 'summary';
-                    this.messages = (interview.messages || []).map(m => ({
+                this.jobRole = interview.job_position;
+                this.interviewType = interview.interview_type || 'mixed';
+                this.viewStatus = interview.status || 'completed';
+                this.summaryData = interview.summary_data || null;
+                this.messages = (interview.messages || [])
+                    .filter(m => m.name !== 'summary')  // the scorecard replaces the raw JSON
+                    .map(m => ({
                         type: m.role === 'user' ? 'user' : 'agent',
                         source: m.name || 'interviewer',
                         sourceName: this.capitalize(m.name || 'interviewer'),
                         content: m.content,
                         metadata: {},
                     }));
-                }
+                this.screen = 'summary';
             } catch (e) {
                 // silently fail
             }
