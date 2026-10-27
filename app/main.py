@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await database.init_db()
+    await database.abandon_in_progress()
     logger.info("Application started, model=%s", settings.llm_model)
     yield
 

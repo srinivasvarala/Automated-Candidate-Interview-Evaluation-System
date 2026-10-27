@@ -18,7 +18,9 @@ CREATE TABLE IF NOT EXISTS interviews (
     questions_asked INTEGER DEFAULT 0,
     summary_data TEXT,
     created_at TEXT NOT NULL,
-    completed_at TEXT
+    completed_at TEXT,
+    status TEXT NOT NULL DEFAULT 'completed',
+    updated_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -33,12 +35,52 @@ CREATE TABLE IF NOT EXISTS messages (
 """
 
 
+STATUSES = ("in_progress", "completed", "abandoned")
+
+
+async def _migrate(db: aiosqlite.Connection) -> None:
+    """Add columns introduced after the first release to pre-existing databases.
+
+    Rows that predate `status` were only ever saved on completion, so they
+    default to 'completed'.
+    """
+    cursor = await db.execute("PRAGMA table_info(interviews)")
+    columns = {row[1] for row in await cursor.fetchall()}
+    if "status" not in columns:
+        await db.execute("ALTER TABLE interviews ADD COLUMN status TEXT NOT NULL DEFAULT 'completed'")
+    if "updated_at" not in columns:
+        await db.execute("ALTER TABLE interviews ADD COLUMN updated_at TEXT")
+    await db.execute(
+        "UPDATE interviews SET updated_at = COALESCE(completed_at, created_at) WHERE updated_at IS NULL"
+    )
+
+
 async def init_db():
-    """Initialize database and create tables if they don't exist."""
+    """Initialize database, creating and migrating tables as needed."""
     async with aiosqlite.connect(DB_PATH) as db:
         await db.executescript(_CREATE_TABLES)
+        await _migrate(db)
         await db.commit()
     logger.info("Database initialized at %s", DB_PATH)
+
+
+async def abandon_in_progress() -> int:
+    """Mark every in-progress interview as abandoned. Returns how many changed.
+
+    Live session state is held in memory, so after a restart no in-progress
+    interview can be resumed.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "UPDATE interviews SET status = 'abandoned', updated_at = ? WHERE status = 'in_progress'",
+            (now,),
+        )
+        await db.commit()
+        count = cursor.rowcount
+    if count:
+        logger.info("Marked %d in-progress interview(s) as abandoned", count)
+    return count
 
 
 async def save_interview(
@@ -55,8 +97,9 @@ async def save_interview(
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             """INSERT OR REPLACE INTO interviews
-               (id, job_position, job_description, interview_type, questions_asked, summary_data, created_at, completed_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               (id, job_position, job_description, interview_type, questions_asked, summary_data,
+                created_at, completed_at, status, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?)""",
             (
                 interview_id,
                 job_position,
@@ -64,6 +107,7 @@ async def save_interview(
                 interview_type,
                 questions_asked,
                 json.dumps(summary_data) if summary_data else None,
+                now,
                 now,
                 now,
             ),
@@ -83,7 +127,8 @@ async def list_interviews(limit: int = 20, offset: int = 0) -> list[dict]:
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
-            """SELECT id, job_position, interview_type, questions_asked, summary_data, created_at, completed_at
+            """SELECT id, job_position, interview_type, questions_asked, summary_data, created_at, completed_at,
+                      status, updated_at
                FROM interviews
                ORDER BY created_at DESC
                LIMIT ? OFFSET ?""",
