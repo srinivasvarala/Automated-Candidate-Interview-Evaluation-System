@@ -17,7 +17,7 @@ The ordered messages of an Interview session, saved after every Turn.
 _Avoid_: history (that means the list of past Interview sessions), log
 
 **Scorecard**:
-The structured end-of-session summary: scores per category, strengths, improvements, and the difficulty curve.
+The structured end-of-session summary: scores per category, strengths, improvements, and the difficulty curve. If the model's output cannot be validated after one retry, the Scorecard is still delivered with no category scores, a plain note, and the difficulty curve.
 _Avoid_: summary, report
 
 **Interviewer / Evaluator**:
@@ -27,6 +27,9 @@ _Avoid_: agent, bot, coach
 **Score**:
 The Evaluator's hidden 1-10 rating of one answer. It is not the headline number the candidate sees; it drives the next Tier.
 _Avoid_: grade, rating
+
+**Unscored Turn**:
+A Turn whose Score could not be obtained from the Evaluator's model, even after one retry. It has feedback but no Score; it is skipped by Difficulty (neither extends nor breaks a Streak) and shown without a score.
 
 **Strong answer / weak answer**:
 An answer with a Score of 7 or more / 4 or less.

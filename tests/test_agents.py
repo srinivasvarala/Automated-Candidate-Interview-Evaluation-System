@@ -105,14 +105,24 @@ class TestEvaluatorNode:
         assert result["scores"] == [7]
 
     @pytest.mark.asyncio
-    async def test_handles_bad_score_json(self, state_with_conversation, mock_llm_response):
+    async def test_unparseable_score_leaves_the_turn_unscored(self, state_with_conversation, mock_llm_response):
         bad_score = AsyncMock(return_value="not json")
         with patch("app.agents.llm_service.complete", mock_llm_response), \
              patch("app.agents.llm_service.complete_json", bad_score):
             result = await evaluator_node(state_with_conversation)
 
-        # Should default to score 5
-        assert result["scores"] == [5]
+        assert bad_score.call_count == 2  # one retry
+        assert result["scores"] == [None]
+        assert result["messages"][0].name == "evaluator"  # feedback is still delivered
+
+    @pytest.mark.asyncio
+    async def test_retry_can_recover_the_score(self, state_with_conversation, mock_llm_response):
+        flaky = AsyncMock(side_effect=["oops", '{"score": 8}'])
+        with patch("app.agents.llm_service.complete", mock_llm_response), \
+             patch("app.agents.llm_service.complete_json", flaky):
+            result = await evaluator_node(state_with_conversation)
+
+        assert result["scores"] == [8]
 
 
 class TestSummaryNode:
@@ -126,13 +136,27 @@ class TestSummaryNode:
         assert result["current_phase"] == "done"
 
     @pytest.mark.asyncio
-    async def test_handles_invalid_json(self, state_with_conversation):
+    async def test_unparseable_scorecard_still_delivers_the_curve(self, state_with_conversation):
+        state_with_conversation["scores"] = [8, 3]
         bad_mock = AsyncMock(return_value="This is not JSON at all")
         with patch("app.agents.llm_service.complete_json", bad_mock):
             result = await summary_node(state_with_conversation)
 
-        assert result["summary_data"]["scores"]["technical"] == 5
-        assert "Unable to parse" in result["summary_data"]["strengths"][0]
+        data = result["summary_data"]
+        assert data["scores"] == {}
+        assert "couldn't generate" in data["overall_summary"]
+        assert [q["score"] for q in data["difficulty_curve"]] == [8, 3]
+        assert result["messages"][0].content == data["overall_summary"]
+        assert result["current_phase"] == "done"
+
+    @pytest.mark.asyncio
+    async def test_scorecard_keeps_valid_categories_only(self, state_with_conversation):
+        reply = AsyncMock(return_value='{"scores": {"technical": 7, "communication": 42}, "overall_summary": "ok"}')
+        with patch("app.agents.llm_service.complete_json", reply):
+            result = await summary_node(state_with_conversation)
+
+        assert result["summary_data"]["scores"] == {"technical": 7}
+
 
     @pytest.mark.asyncio
     async def test_returns_summary_ai_message(self, state_with_conversation, mock_llm_json_response):

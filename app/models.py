@@ -19,7 +19,7 @@ class GraphState(TypedDict):
     current_phase: str  # "interviewer" | "candidate" | "evaluator" | "summary"
     end_requested: bool
     summary_data: dict[str, Any] | None
-    scores: list[int]  # Evaluator score (1-10) per answered question
+    scores: list[int | None]  # Evaluator score (1-10) per answered question; None if unscored
 
 
 # --- WebSocket Message Models ---
@@ -30,17 +30,3 @@ class WSMessage(BaseModel):
     source: str = ""
     event: str = ""
     metadata: dict[str, Any] = {}
-
-
-class Scorecard(BaseModel):
-    technical: int = 0
-    problem_solving: int = 0
-    communication: int = 0
-    culture_fit: int = 0
-
-
-class SummaryData(BaseModel):
-    scores: Scorecard = Scorecard()
-    strengths: list[str] = []
-    improvements: list[str] = []
-    overall_summary: str = ""

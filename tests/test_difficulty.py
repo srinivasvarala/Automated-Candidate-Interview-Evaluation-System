@@ -90,3 +90,19 @@ def test_brief_reports_the_trend():
     assert "trend is declining" in Difficulty([7, 5]).brief()
     assert "trend is stable" in Difficulty([6, 6]).brief()
     assert "trend is stable" in Difficulty([6]).brief()
+
+
+def test_an_unscored_turn_neither_extends_nor_breaks_a_streak():
+    assert Difficulty([8, None, 8]).tier.index == 1
+    assert Difficulty([8, None]).tier.index == 0
+
+
+def test_an_unscored_turn_keeps_the_tier_and_shows_in_the_curve():
+    assert Difficulty([9, 9, None]).curve()[-1] == {
+        "question": 3, "score": None, "tier": "Foundation", "tier_index": 1,
+    }
+
+
+def test_brief_ignores_unscored_turns():
+    assert "average score 8.0/10" in Difficulty([8, None]).brief()
+    assert "performance so far" not in Difficulty([None]).brief()

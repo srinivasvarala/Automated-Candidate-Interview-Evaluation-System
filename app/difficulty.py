@@ -3,7 +3,8 @@
 Turns the Scores so far into the next Tier, the prompt brief for the
 Interviewer, and the per-question curve shown on the Scorecard. The tier and
 streaks are never stored: they are derived by replaying the rules over the
-list of Scores.
+list of Scores. An unscored Turn is a `None` in that list: it is skipped by the
+rules and the performance note.
 """
 
 from dataclasses import dataclass
@@ -35,12 +36,12 @@ def _tier(index: int) -> Tier:
 
 @dataclass(frozen=True)
 class Difficulty:
-    scores: tuple[int, ...] = ()
+    scores: tuple[int | None, ...] = ()
 
     def __init__(self, scores=()):
         object.__setattr__(self, "scores", tuple(scores))
 
-    def record(self, score: int) -> "Difficulty":
+    def record(self, score: int | None) -> "Difficulty":
         return Difficulty(self.scores + (score,))
 
     @property
@@ -59,12 +60,13 @@ class Difficulty:
         """The prompt block telling the Interviewer how hard to ask."""
         tier = self.tier
         text = f"## Difficulty Level: {tier.name}\n{tier.guidance}"
-        if not self.scores:
+        scored = [s for s in self.scores if s is not None]
+        if not scored:
             return text
-        avg = sum(self.scores) / len(self.scores)
-        if len(self.scores) >= 2 and self.scores[-1] > self.scores[-2]:
+        avg = sum(scored) / len(scored)
+        if len(scored) >= 2 and scored[-1] > scored[-2]:
             trend = "improving"
-        elif len(self.scores) >= 2 and self.scores[-1] < self.scores[-2]:
+        elif len(scored) >= 2 and scored[-1] < scored[-2]:
             trend = "declining"
         else:
             trend = "stable"
@@ -80,6 +82,9 @@ class Difficulty:
         indexes = [0]
         strong = weak = 0
         for score in self.scores:
+            if score is None:
+                indexes.append(indexes[-1])
+                continue
             strong = strong + 1 if score >= STRONG_AT else 0
             weak = weak + 1 if score <= WEAK_AT else 0
             tier = indexes[-1]

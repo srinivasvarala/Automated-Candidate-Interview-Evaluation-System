@@ -264,12 +264,12 @@
                                     class="grade-circle-fill"/>
                         </svg>
                         <div class="grade-value">
-                            <span class="grade-number" x-text="overallScore.toFixed(1)"></span>
-                            <span class="grade-max">/10</span>
+                            <span class="grade-number" x-text="hasCategoryScores ? overallScore.toFixed(1) : '—'"></span>
+                            <span class="grade-max" x-show="hasCategoryScores">/10</span>
                         </div>
                     </div>
                     <h3>Interview Scorecard</h3>
-                    <p class="grade-verdict" x-text="gradeVerdict(overallScore)"></p>
+                    <p class="grade-verdict" x-show="hasCategoryScores" x-text="gradeVerdict(overallScore)"></p>
                 </div>
 
                 <div class="scorecard-body">
@@ -322,10 +322,10 @@
                             <div class="curve-chart">
                                 <template x-for="(q, i) in summaryData.difficulty_curve" :key="i">
                                     <div class="curve-bar-wrapper">
-                                        <div class="curve-score" x-text="q.score"></div>
+                                        <div class="curve-score" x-text="q.score ?? '–'"></div>
                                         <div class="curve-bar-bg">
                                             <div class="curve-bar" :class="scoreColor(q.score)"
-                                                 :style="'height:' + (q.score * 10) + '%'"></div>
+                                                 :style="'height:' + ((q.score ?? 0) * 10) + '%'"></div>
                                         </div>
                                         <div class="curve-label" x-text="'Q' + q.question"></div>
                                         <div class="curve-tier" :class="'tier-' + q.tier_index"

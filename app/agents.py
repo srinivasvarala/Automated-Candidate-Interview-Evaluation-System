@@ -7,6 +7,8 @@ from langgraph.types import interrupt
 
 from app.config import settings
 from app.difficulty import Difficulty
+from app.llm_output import AnswerScore, ScorecardOutput
+from app.llm_service import LLMOutputError
 from app.models import GraphState
 from app import llm_service
 
@@ -307,18 +309,14 @@ Consider: accuracy, depth, specificity, structure, and relevance.
 
 Return ONLY a JSON object: {{"score": <1-10>}}"""
 
-    score_response = await llm_service.complete_json(_build_messages(state, score_prompt))
-
-    # Parse the score
     try:
-        score_data = json.loads(score_response)
-        score = max(1, min(10, int(score_data.get("score", 5))))
-    except (json.JSONDecodeError, ValueError, TypeError):
-        logger.warning("Failed to parse evaluator score, defaulting to 5")
-        score = 5
+        score = (await llm_service.complete_model(_build_messages(state, score_prompt), AnswerScore)).score
+    except LLMOutputError:
+        logger.warning("Evaluator score unavailable; leaving this Turn unscored")
+        score = None
 
     updated = difficulty.record(score)
-    logger.info("Q%d score=%d, tier=%s, next_tier=%s",
+    logger.info("Q%d score=%s, tier=%s, next_tier=%s",
                 q_num, score, updated.curve()[-1]["tier"], updated.tier.name)
 
     return {
@@ -372,24 +370,20 @@ Return ONLY valid JSON with this exact structure:
 }}"""
 
     logger.info("Summary node generating scorecard")
-    response = await llm_service.complete_json(_build_messages(state, system_prompt))
-
     try:
-        summary_data = json.loads(response)
-    except json.JSONDecodeError:
-        logger.warning("Failed to parse summary JSON, using fallback")
-        summary_data = {
-            "scores": {"technical": 5, "problem_solving": 5, "communication": 5, "culture_fit": 5},
-            "strengths": ["Unable to parse detailed feedback"],
-            "improvements": ["Unable to parse detailed feedback"],
-            "overall_summary": response[:300],
-        }
+        scorecard = await llm_service.complete_model(_build_messages(state, system_prompt), ScorecardOutput)
+        summary_data = scorecard.model_dump(exclude_none=True)
+        content = json.dumps(summary_data)
+    except LLMOutputError:
+        logger.warning("Scorecard unavailable; delivering the difficulty curve only")
+        content = "We couldn't generate your detailed scorecard."
+        summary_data = {"scores": {}, "strengths": [], "improvements": [], "overall_summary": content}
 
     # Attach difficulty curve data (not from LLM — computed from the scores)
     summary_data["difficulty_curve"] = Difficulty(state.get("scores") or []).curve()
 
     return {
-        "messages": [AIMessage(content=response, name="summary")],
+        "messages": [AIMessage(content=content, name="summary")],
         "summary_data": summary_data,
         "current_phase": "done",
     }

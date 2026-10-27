@@ -221,3 +221,33 @@ async def test_checkpoint_cleanup_failure_does_not_lose_the_final_event():
     final = await collect(interview.end())
     assert kinds(final) == ["Typing", "Summary", "Complete"]
     assert interview.status == "completed"
+
+
+async def test_unscorable_answer_still_gets_feedback_without_a_score(interview):
+    async def no_score(messages, temperature=0.3):
+        return "garbage" if "Rate the candidate" in messages[0]["content"] else SUMMARY_JSON
+
+    await collect(interview.start("Software Engineer"))
+    with patch("app.agents.llm_service.complete_json", no_score):
+        turn = await collect(interview.answer("My answer"))
+
+    feedback = next(e for e in turn if isinstance(e, session.AgentMessage) and e.source == "evaluator")
+    assert feedback.score is None and feedback.tier is None
+    assert interview.status == "in_progress"
+
+
+async def test_scorecard_failure_still_completes_the_interview(interview):
+    async def no_card(messages, temperature=0.3):
+        return '{"score": 8}' if "Rate the candidate" in messages[0]["content"] else "garbage"
+
+    await collect(interview.start("Software Engineer"))
+    await collect(interview.answer("My answer"))
+    with patch("app.agents.llm_service.complete_json", no_card):
+        final = await collect(interview.end())
+
+    summary = next(e for e in final if isinstance(e, session.Summary))
+    assert summary.data["scores"] == {}
+    assert [q["score"] for q in summary.data["difficulty_curve"]] == [8]
+    assert interview.status == "completed"
+    saved = await database.get_interview(interview.id)
+    assert saved["status"] == "completed"

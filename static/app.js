@@ -59,6 +59,9 @@ function interviewApp() {
         get isUnfinishedView() {
             return this.screen === 'summary' && !this.summaryData;
         },
+        get hasCategoryScores() {
+            return !!(this.summaryData && this.summaryData.scores && Object.keys(this.summaryData.scores).length);
+        },
         get overallScore() {
             if (!this.summaryData || !this.summaryData.scores) return 0;
             const scores = Object.values(this.summaryData.scores);

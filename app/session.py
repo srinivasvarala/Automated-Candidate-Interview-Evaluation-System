@@ -332,8 +332,8 @@ class InterviewSession:
     def _agent_message(msg: AIMessage, updates: dict) -> AgentMessage:
         if msg.name == "evaluator":
             scores = updates.get("scores")
-            if scores:
-                latest = Difficulty(scores).curve()[-1]
+            latest = Difficulty(scores).curve()[-1] if scores else None
+            if latest and latest["score"] is not None:  # unscored Turns carry no score
                 return AgentMessage(
                     source=msg.name,
                     content=msg.content,

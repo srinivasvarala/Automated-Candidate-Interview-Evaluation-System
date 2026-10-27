@@ -1,9 +1,17 @@
 import logging
+from typing import TypeVar
 
 import litellm
+from pydantic import BaseModel, ValidationError
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T", bound=BaseModel)
+
+
+class LLMOutputError(Exception):
+    """The model did not return output matching the requested shape, even after a retry."""
 
 # Models that rejected `temperature`; learned at runtime, since newer models drop it.
 _NO_TEMPERATURE: set[str] = set()
@@ -102,3 +110,16 @@ async def complete_json(messages: list[dict], temperature: float = 0.3) -> str:
 
     logger.debug("LLM JSON response: %s", result[:200])
     return result
+
+
+async def complete_model(messages: list[dict], model: type[T], temperature: float = 0.3) -> T:
+    """Call LLM expecting JSON that matches `model`; retry once, then raise LLMOutputError."""
+    error: ValidationError | None = None
+    for attempt in (1, 2):
+        text = await complete_json(messages, temperature=temperature)
+        try:
+            return model.model_validate_json(text)
+        except ValidationError as e:
+            error = e
+            logger.warning("LLM output did not match %s (attempt %d): %s", model.__name__, attempt, e)
+    raise LLMOutputError(f"Model output did not match {model.__name__}") from error
