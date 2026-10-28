@@ -11,6 +11,7 @@ from app.config import settings
 from app import database
 from app import session
 from app.registry import SessionRegistry
+from app import prep_api
 from app import resume_parser
 
 # Configure logging
@@ -33,6 +34,7 @@ registry = SessionRegistry()
 
 app = FastAPI(title="AI Interview Coach", lifespan=lifespan)
 
+app.include_router(prep_api.router)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
