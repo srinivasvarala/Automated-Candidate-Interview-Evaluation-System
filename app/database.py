@@ -32,6 +32,41 @@ CREATE TABLE IF NOT EXISTS messages (
     created_at TEXT NOT NULL,
     FOREIGN KEY (interview_id) REFERENCES interviews(id)
 );
+
+CREATE TABLE IF NOT EXISTS prep_plans (
+    id TEXT PRIMARY KEY,
+    role TEXT NOT NULL,
+    seniority TEXT NOT NULL,
+    job_description TEXT DEFAULT '',
+    resume_text TEXT DEFAULT '',
+    outline TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS prep_lessons (
+    plan_id TEXT NOT NULL,
+    area TEXT NOT NULL,
+    content TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'ready',
+    generated_at TEXT NOT NULL,
+    completed_at TEXT,
+    PRIMARY KEY (plan_id, area),
+    FOREIGN KEY (plan_id) REFERENCES prep_plans(id)
+);
+
+CREATE TABLE IF NOT EXISTS prep_checks (
+    plan_id TEXT NOT NULL,
+    area TEXT NOT NULL,
+    idx INTEGER NOT NULL,
+    question TEXT NOT NULL,
+    answer TEXT NOT NULL,
+    score INTEGER,
+    feedback TEXT NOT NULL,
+    answered_at TEXT NOT NULL,
+    PRIMARY KEY (plan_id, area, idx),
+    FOREIGN KEY (plan_id) REFERENCES prep_plans(id)
+);
 """
 
 
@@ -190,3 +225,139 @@ async def get_interview(interview_id: str) -> dict | None:
         )
         interview["messages"] = [dict(r) for r in await cursor.fetchall()]
         return interview
+
+
+# --- Prep plans ---
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+async def create_prep_plan(
+    plan_id: str,
+    role: str,
+    seniority: str,
+    job_description: str,
+    resume_text: str,
+    outline: list[dict],
+) -> None:
+    """Insert a new Prep plan with its outline (a list of Area dicts)."""
+    now = _now()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """INSERT INTO prep_plans
+               (id, role, seniority, job_description, resume_text, outline, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (plan_id, role, seniority, job_description, resume_text, json.dumps(outline), now, now),
+        )
+        await db.commit()
+    logger.info("Created prep plan %s", plan_id)
+
+
+async def list_prep_plans(limit: int = 20, offset: int = 0) -> list[dict]:
+    """List Prep plans, most recent first, with progress counts."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """SELECT p.id, p.role, p.seniority, p.outline, p.created_at, p.updated_at,
+                      (SELECT COUNT(*) FROM prep_lessons l WHERE l.plan_id = p.id) AS lessons_generated,
+                      (SELECT COUNT(*) FROM prep_lessons l WHERE l.plan_id = p.id AND l.status = 'done') AS lessons_done
+               FROM prep_plans p
+               ORDER BY p.created_at DESC, p.rowid DESC
+               LIMIT ? OFFSET ?""",
+            (limit, offset),
+        )
+        plans = []
+        for row in await cursor.fetchall():
+            item = dict(row)
+            item["areas_total"] = len(json.loads(item.pop("outline")))
+            plans.append(item)
+        return plans
+
+
+async def get_prep_plan(plan_id: str) -> dict | None:
+    """A Prep plan with each Area's Lesson, status and Checks. Includes the private resume text."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute("SELECT * FROM prep_plans WHERE id = ?", (plan_id,))
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        plan = dict(row)
+        outline = json.loads(plan.pop("outline"))
+
+        cursor = await db.execute("SELECT * FROM prep_lessons WHERE plan_id = ?", (plan_id,))
+        lessons = {r["area"]: dict(r) for r in await cursor.fetchall()}
+        cursor = await db.execute(
+            "SELECT area, idx, question, answer, score, feedback, answered_at FROM prep_checks "
+            "WHERE plan_id = ? ORDER BY area, idx",
+            (plan_id,),
+        )
+        checks: dict[str, list[dict]] = {}
+        for r in await cursor.fetchall():
+            item = dict(r)
+            checks.setdefault(item.pop("area"), []).append(item)
+
+        areas = []
+        for area in outline:
+            lesson = lessons.get(area["key"])
+            areas.append({
+                **area,
+                "status": lesson["status"] if lesson else "not_started",
+                "lesson": json.loads(lesson["content"]) if lesson else None,
+                "checks": checks.get(area["key"], []),
+            })
+        plan["areas"] = areas
+        return plan
+
+
+async def save_lesson(plan_id: str, area: str, content: dict) -> dict:
+    """Store a generated Lesson unless one exists already; returns the Lesson now stored.
+
+    If two requests generate the same Lesson at once, the first one saved wins.
+    """
+    now = _now()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT OR IGNORE INTO prep_lessons (plan_id, area, content, status, generated_at) "
+            "VALUES (?, ?, ?, 'ready', ?)",
+            (plan_id, area, json.dumps(content), now),
+        )
+        await db.execute("UPDATE prep_plans SET updated_at = ? WHERE id = ?", (now, plan_id))
+        cursor = await db.execute(
+            "SELECT content FROM prep_lessons WHERE plan_id = ? AND area = ?", (plan_id, area)
+        )
+        stored = json.loads((await cursor.fetchone())[0])
+        await db.commit()
+        return stored
+
+
+async def save_check(
+    plan_id: str, area: str, idx: int, question: str, answer: str, score: int | None, feedback: str
+) -> None:
+    """Record the answer to a Check; answering again replaces the earlier answer."""
+    now = _now()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """INSERT OR REPLACE INTO prep_checks
+               (plan_id, area, idx, question, answer, score, feedback, answered_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (plan_id, area, idx, question, answer, score, feedback, now),
+        )
+        await db.execute("UPDATE prep_plans SET updated_at = ? WHERE id = ?", (now, plan_id))
+        await db.commit()
+
+
+async def complete_lesson(plan_id: str, area: str) -> bool:
+    """Mark a generated Lesson done. Returns False if the Lesson does not exist."""
+    now = _now()
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "UPDATE prep_lessons SET status = 'done', completed_at = COALESCE(completed_at, ?) "
+            "WHERE plan_id = ? AND area = ?",
+            (now, plan_id, area),
+        )
+        if cursor.rowcount:
+            await db.execute("UPDATE prep_plans SET updated_at = ? WHERE id = ?", (now, plan_id))
+        await db.commit()
+        return cursor.rowcount > 0
