@@ -170,3 +170,62 @@ async def test_empty_feedback_gets_a_fallback():
 async def test_role_templates_list_quick_picks():
     templates = prep.role_templates()
     assert {"role": "AI Engineer", "focus": prep.ROLE_TEMPLATES["AI Engineer"]} in templates
+
+
+# --- mock focus ---
+
+def _area(key, title, scores=(), case=None):
+    return {
+        "key": key, "title": title, "case": case or f"case for {key}",
+        "checks": [{"idx": i, "score": s} for i, s in enumerate(scores)],
+    }
+
+
+def _plan(*areas):
+    return {"role": "AI Engineer", "seniority": "senior", "areas": list(areas)}
+
+
+async def test_focus_without_checks_lists_every_area_in_plan_order():
+    focus = prep.mock_focus(_plan(_area("a", "Architecture"), _area("b", "Design")))
+    assert focus.splitlines() == [
+        "Role: AI Engineer (senior).",
+        "Areas in the study plan:",
+        "- Architecture: case for a",
+        "- Design: case for b",
+    ]
+
+
+async def test_focus_puts_the_weakest_scored_areas_first():
+    plan = _plan(
+        _area("a", "Architecture", [9, 9]),
+        _area("b", "Design", [3, 5]),
+        _area("c", "Testing"),  # never answered: not weak, just not practised
+        _area("d", "Observability", [2]),
+    )
+    lines = prep.mock_focus(plan).splitlines()
+    assert lines[1] == "Weakest areas so far (ask about these first):"
+    assert lines[2].startswith("- Observability:") and "2.0/10" in lines[2]
+    assert lines[3].startswith("- Design:") and "4.0/10" in lines[3]
+    assert lines[4].startswith("- Architecture:") and "9.0/10" in lines[4]
+    assert lines[5] == "Other areas in the study plan:"
+    assert lines[6:] == ["- Testing: case for c"]
+
+
+async def test_focus_names_at_most_three_weak_areas():
+    plan = _plan(*[_area(k, k.upper(), [s]) for k, s in zip("abcde", (8, 1, 7, 2, 3))])
+    lines = prep.mock_focus(plan).splitlines()
+    weak = lines[2:lines.index("Other areas in the study plan:")]
+    assert [w.split(":")[0] for w in weak] == ["- B", "- D", "- E"]
+    assert [line.split(":")[0] for line in lines[lines.index("Other areas in the study plan:") + 1:]] == ["- A", "- C"]
+
+
+async def test_focus_ignores_unscored_checks_and_breaks_ties_by_plan_order():
+    plan = _plan(
+        _area("a", "A", [5]),
+        _area("b", "B", [5]),
+        {"key": "c", "title": "C", "case": "x", "checks": [{"idx": 0, "score": None}]},
+    )
+    lines = prep.mock_focus(plan).splitlines()
+    assert [line.split(":")[0] for line in lines[2:4]] == ["- A", "- B"]
+    assert lines[-1] == "- C: x"
+    assert "practice check average" not in lines[-1]

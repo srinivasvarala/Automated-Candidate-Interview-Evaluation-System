@@ -43,12 +43,14 @@ export class InterviewConnection {
 
     // --- Interface ---
 
-    start({ job_position, job_description = '', interview_type = 'mixed', resume_text = '' }) {
+    start({ job_position, job_description = '', interview_type = 'mixed', resume_text = '', prep_plan_id = '' }) {
         this._teardown();
         this._clear();
         this._active = { jobRole: job_position, interviewType: interview_type };
         this._s.screen = 'chat';
-        this._open({ job_position, job_description, interview_type, resume_text });
+        const first = { job_position, job_description, interview_type, resume_text };
+        if (prep_plan_id) first.prep_plan_id = prep_plan_id;  // the server adds the plan's resume and focus
+        this._open(first);
         this._emit();
     }
 
@@ -214,7 +216,7 @@ export class InterviewConnection {
 
             case 'error':
                 s.isTyping = false;
-                if (data.code === 'session_not_found') {
+                if (data.code === 'session_not_found' || data.code === 'prep_plan_not_found') {
                     this._teardown();
                     this._clearActive();
                     this._clear();

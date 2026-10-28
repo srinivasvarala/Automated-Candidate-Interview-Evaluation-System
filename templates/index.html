@@ -231,6 +231,9 @@
                     <span x-text="prepError"></span>
                     <button type="button" class="prep-retry" x-show="prepCanRetry" @click="retryPrep()">Try again</button>
                 </div>
+                <button type="button" id="start-mock-btn" class="start-btn prep-mock-btn" @click="startMockFromPlan()" :disabled="!!prepBusy">
+                    <span>Start a mock interview on this plan</span>
+                </button>
                 <template x-for="(area, i) in prepPlan.areas" :key="area.key">
                     <div class="history-card prep-area-card" :data-area="area.key" @click="openPrepLesson(area.key)">
                         <div class="history-card-header">

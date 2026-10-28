@@ -69,6 +69,23 @@ class TestInterviewerNode:
         system_msg = call_args[0]["content"]
         assert "LLMs" in system_msg or "job description" in system_msg.lower()
 
+    @pytest.mark.asyncio
+    async def test_prep_focus_is_added_to_the_prompt_when_set(self, sample_state, mock_llm_response):
+        sample_state["prep_focus"] = "Weakest areas so far (ask about these first):\n- Observability: tracing a RAG bot"
+        with patch("app.agents.llm_service.complete", mock_llm_response) as mock:
+            await interviewer_node(sample_state)
+
+        system_msg = mock.call_args[0][0][0]["content"]
+        assert "## Prep Focus" in system_msg
+        assert "tracing a RAG bot" in system_msg
+
+    @pytest.mark.asyncio
+    async def test_no_prep_focus_section_without_a_plan(self, sample_state, mock_llm_response):
+        with patch("app.agents.llm_service.complete", mock_llm_response) as mock:
+            await interviewer_node(sample_state)
+
+        assert "Prep Focus" not in mock.call_args[0][0][0]["content"]
+
 
 class TestEvaluatorNode:
     @pytest.mark.asyncio

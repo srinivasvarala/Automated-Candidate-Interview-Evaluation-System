@@ -281,6 +281,34 @@ Return ONLY a JSON object: {{"score": <1-10>}}"""
     return CheckResult(feedback, score)
 
 
+MAX_WEAK_AREAS = 3
+
+
+def mock_focus(plan: dict) -> str:
+    """The prep focus for a mock interview, from a stored plan (as `database.get_prep_plan` returns it).
+
+    The weakest Areas by average Check Score come first (at most MAX_WEAK_AREAS, only Areas with
+    a Score), then every other Area in plan order.
+    """
+    scored = []
+    for position, area in enumerate(plan["areas"]):
+        scores = [c["score"] for c in area.get("checks", []) if isinstance(c.get("score"), int)]
+        if scores:
+            scored.append((sum(scores) / len(scores), position, area))
+    weak = [item for item in sorted(scored)[:MAX_WEAK_AREAS]]
+    weak_keys = {area["key"] for _, _, area in weak}
+
+    lines = [f"Role: {plan['role']} ({plan['seniority']})."]
+    if weak:
+        lines.append("Weakest areas so far (ask about these first):")
+        lines += [f"- {a['title']}: {a['case']} (practice check average {avg:.1f}/10)" for avg, _, a in weak]
+        lines.append("Other areas in the study plan:")
+    else:
+        lines.append("Areas in the study plan:")
+    lines += [f"- {a['title']}: {a['case']}" for a in plan["areas"] if a["key"] not in weak_keys]
+    return "\n".join(lines)
+
+
 def role_templates() -> list[dict[str, Any]]:
     """Quick-pick roles for the setup screen."""
     return [{"role": name, "focus": hint} for name, hint in ROLE_TEMPLATES.items()]

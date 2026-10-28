@@ -27,6 +27,7 @@ END_SENTINEL = "__END_INTERVIEW__"
 MAX_JOB_POSITION = 200
 MAX_JOB_DESCRIPTION = 10_000
 MAX_RESUME = 10_000
+MAX_PREP_FOCUS = 3_000
 
 
 # --- Events ---
@@ -117,6 +118,7 @@ class InterviewSession:
         job_description: str = "",
         resume_text: str = "",
         interview_type: str = "mixed",
+        prep_focus: str = "",
     ) -> AsyncIterator[Event]:
         if self.status != "new":
             yield Error("Interview already started.")
@@ -158,6 +160,7 @@ class InterviewSession:
             "job_description": job_description,
             "resume_text": resume_text,
             "interview_type": interview_type,
+            "prep_focus": (prep_focus or "").strip()[:MAX_PREP_FOCUS],
             "questions_asked": 0,
             "current_phase": "interviewer",
             "end_requested": False,

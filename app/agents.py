@@ -165,6 +165,15 @@ The candidate submitted the resume below. Use it to:
 
 {resume[:4000]}"""
 
+    prep_focus = state.get("prep_focus", "")
+    if prep_focus:
+        system_prompt += f"""
+
+## Prep Focus
+The candidate has been working through a study plan before this interview. Use it to choose what to ask: favour the weakest areas first, and ask how they would design, build, test, deploy and monitor real systems rather than for definitions.
+
+{prep_focus}"""
+
     logger.info("Interviewer generating question %d/%d for %s (%s)", q_num, total, job, interview_type)
     response = await llm_service.complete(_build_messages(state, system_prompt, _NEXT_QUESTION_PROMPT))
 

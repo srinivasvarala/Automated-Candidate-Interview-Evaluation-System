@@ -123,6 +123,23 @@ window.interviewApp = function interviewApp() {
             });
         },
 
+        // Mock interview on a Prep plan: the server adds the plan's resume and prep focus.
+        startMockFromPlan() {
+            const plan = this.prepPlan;
+            if (!plan) return;
+            this.jobRole = plan.role;
+            this.jobDescription = plan.job_description || '';
+            this.interviewType = 'technical';
+            this.viewStatus = '';
+            this.setupNotice = '';
+            connection.start({
+                job_position: plan.role,
+                job_description: this.jobDescription,
+                interview_type: this.interviewType,
+                prep_plan_id: plan.id,
+            });
+        },
+
         sendAnswer() {
             if (!connection.send(this.userInput)) return;
             this.userInput = '';

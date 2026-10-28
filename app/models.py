@@ -19,6 +19,7 @@ class GraphState(TypedDict):
     current_phase: str  # "interviewer" | "candidate" | "evaluator" | "summary"
     end_requested: bool
     summary_data: dict[str, Any] | None
+    prep_focus: str  # study-plan context for the Interviewer (optional)
     scores: list[int | None]  # Evaluator score (1-10) per answered question; None if unscored
 
 

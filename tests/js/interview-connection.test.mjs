@@ -316,3 +316,29 @@ test('interview_complete turns the input off', () => {
     assert.equal(t.state.inputEnabled, false);
     assert.equal(t.state.isTyping, false);
 });
+
+test('start with a prep plan sends its id, and without one sends nothing extra', () => {
+    const t = setup();
+    t.connection.start({ job_position: 'AI Architect', interview_type: 'technical', prep_plan_id: 'plan-1' });
+    t.socket.open();
+    assert.deepEqual(t.socket.sent[0], {
+        job_position: 'AI Architect', job_description: '', interview_type: 'technical', resume_text: '', prep_plan_id: 'plan-1',
+    });
+
+    const plain = setup();
+    plain.connection.start({ job_position: 'Engineer' });
+    plain.socket.open();
+    assert.equal('prep_plan_id' in plain.socket.sent[0], false);
+});
+
+test('a missing prep plan returns to setup with the notice and starts no reconnects', () => {
+    const t = setup();
+    t.connection.start({ job_position: 'Engineer', prep_plan_id: 'gone' });
+    t.socket.open();
+    t.socket.receive({ type: 'error', code: 'prep_plan_not_found', fatal: true, content: 'That prep plan no longer exists.' });
+    assert.equal(t.state.screen, 'setup');
+    assert.equal(t.state.setupNotice, 'That prep plan no longer exists.');
+    assert.equal(t.state.messages.length, 0);
+    t.sockets[0].drop();
+    assert.equal(t.timers.length, 0);
+});

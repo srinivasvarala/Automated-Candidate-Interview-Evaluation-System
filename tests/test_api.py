@@ -165,3 +165,107 @@ class TestWebSocketInterview:
             data = json.loads(ws.receive_text())
             assert data["type"] == "error"
             assert data["code"] == "session_not_found"
+
+
+class TestMockFromPrepPlan:
+    """A mock interview started from a Prep plan: the server adds the plan's resume and focus."""
+
+    @staticmethod
+    def make_plan(plan_id="plan-1"):
+        import asyncio
+
+        from app import database
+
+        outline = [
+            {"key": "architecture", "title": "Architecture", "case": "RAG bot", "goal": "g"},
+            {"key": "observability", "title": "Observability", "case": "Tracing", "goal": "g"},
+        ]
+
+        async def create():
+            await database.create_prep_plan(plan_id, "AI Architect", "staff", "Own the AI platform", "Led a RAG rollout", outline)
+            await database.save_lesson(plan_id, "observability", {"case_title": "t", "checks": ["q1", "q2"]})
+            await database.save_check(plan_id, "observability", 0, "q1", "a", 2, "fb")
+            await database.save_check(plan_id, "architecture", 0, "q1", "a", 9, "fb")
+
+        asyncio.run(create())
+
+    def test_plan_fills_in_the_resume_and_focus_the_client_never_sees(self, client):
+        self.make_plan()
+        prompts = []
+
+        async def spy_complete(messages, temperature=0.7):
+            prompts.append(messages[0]["content"])
+            return "A question?"
+
+        with patch("app.agents.llm_service.complete", spy_complete), \
+             client.websocket_connect("/ws/interview") as ws:
+            ws.send_text(json.dumps({
+                "job_position": "AI Architect", "interview_type": "technical", "prep_plan_id": "plan-1",
+            }))
+            assert json.loads(ws.receive_text())["event"] == "interview_started"
+            while json.loads(ws.receive_text()).get("event") != "waiting_for_input":
+                pass
+
+        system = prompts[0]
+        assert "Led a RAG rollout" in system  # resume from the plan
+        assert "Own the AI platform" in system  # job description from the plan
+        assert "## Prep Focus" in system
+        assert system.index("- Observability") < system.index("- Architecture")  # weakest first
+
+    def test_client_values_win_over_the_plan(self, client):
+        self.make_plan()
+        prompts = []
+
+        async def spy_complete(messages, temperature=0.7):
+            prompts.append(messages[0]["content"])
+            return "A question?"
+
+        with patch("app.agents.llm_service.complete", spy_complete), \
+             client.websocket_connect("/ws/interview") as ws:
+            ws.send_text(json.dumps({
+                "job_position": "Other Role", "job_description": "My own JD", "prep_plan_id": "plan-1",
+            }))
+            while json.loads(ws.receive_text()).get("event") != "waiting_for_input":
+                pass
+
+        assert "Other Role" in prompts[0] and "My own JD" in prompts[0]
+        assert "Own the AI platform" not in prompts[0]
+
+    def test_blank_role_falls_back_to_the_plan_role(self, client):
+        self.make_plan()
+        prompts = []
+
+        async def spy_complete(messages, temperature=0.7):
+            prompts.append(messages[0]["content"])
+            return "A question?"
+
+        with patch("app.agents.llm_service.complete", spy_complete), \
+             client.websocket_connect("/ws/interview") as ws:
+            ws.send_text(json.dumps({"prep_plan_id": "plan-1"}))
+            while json.loads(ws.receive_text()).get("event") != "waiting_for_input":
+                pass
+
+        assert "AI Architect" in prompts[0]
+
+    def test_unknown_plan_is_a_fatal_error_and_starts_nothing(self, client):
+        started = []
+        with patch("app.main.session.InterviewSession.start", lambda *a, **k: started.append(1)), \
+             client.websocket_connect("/ws/interview") as ws:
+            ws.send_text(json.dumps({"job_position": "Engineer", "prep_plan_id": "nope"}))
+            data = json.loads(ws.receive_text())
+        assert (data["type"], data["code"], data["fatal"]) == ("error", "prep_plan_not_found", True)
+        assert not started
+
+    def test_without_a_plan_nothing_changes(self, client):
+        prompts = []
+
+        async def spy_complete(messages, temperature=0.7):
+            prompts.append(messages[0]["content"])
+            return "A question?"
+
+        with patch("app.agents.llm_service.complete", spy_complete), \
+             client.websocket_connect("/ws/interview") as ws:
+            ws.send_text(json.dumps({"job_position": "Engineer"}))
+            while json.loads(ws.receive_text()).get("event") != "waiting_for_input":
+                pass
+        assert "Prep Focus" not in prompts[0]

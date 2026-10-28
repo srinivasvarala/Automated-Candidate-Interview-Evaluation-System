@@ -251,3 +251,42 @@ async def test_scorecard_failure_still_completes_the_interview(interview):
     assert interview.status == "completed"
     saved = await database.get_interview(interview.id)
     assert saved["status"] == "completed"
+
+
+async def test_prep_focus_reaches_the_interviewer(interview):
+    prompts = []
+
+    async def spy_complete(messages, temperature=0.7):
+        prompts.append(messages[0]["content"])
+        return await fake_complete(messages, temperature)
+
+    with patch("app.agents.llm_service.complete", spy_complete):
+        await collect(interview.start("Engineer", prep_focus="Role: Engineer (mid).\n- Observability: tracing a RAG bot"))
+
+    assert "## Prep Focus" in prompts[0] and "tracing a RAG bot" in prompts[0]
+
+
+async def test_prep_focus_is_trimmed_to_a_sane_size(interview):
+    prompts = []
+
+    async def spy_complete(messages, temperature=0.7):
+        prompts.append(messages[0]["content"])
+        return "A question?"
+
+    with patch("app.agents.llm_service.complete", spy_complete):
+        await collect(interview.start("Engineer", prep_focus="¤" * 50_000))
+
+    assert prompts[0].count("¤") == session.MAX_PREP_FOCUS
+
+
+async def test_no_prep_focus_by_default(interview):
+    prompts = []
+
+    async def spy_complete(messages, temperature=0.7):
+        prompts.append(messages[0]["content"])
+        return "A question?"
+
+    with patch("app.agents.llm_service.complete", spy_complete):
+        await collect(interview.start("Engineer"))
+
+    assert "Prep Focus" not in prompts[0]

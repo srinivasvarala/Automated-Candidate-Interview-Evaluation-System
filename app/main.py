@@ -11,7 +11,7 @@ from app.config import settings
 from app import database
 from app import session
 from app.registry import SessionRegistry
-from app import prep_api
+from app import prep, prep_api
 from app import resume_parser
 
 # Configure logging
@@ -165,14 +165,32 @@ async def websocket_interview(websocket: WebSocket):
             token = registry.claim(interview)
             events = interview.resume()
         else:
+            setup = {
+                "job_position": first.get("job_position", ""),
+                "job_description": first.get("job_description", ""),
+                "resume_text": first.get("resume_text", ""),
+                "interview_type": first.get("interview_type", "mixed"),
+            }
+            prep_focus = ""
+            plan_id = first.get("prep_plan_id")
+            if plan_id:
+                plan = await database.get_prep_plan(str(plan_id))
+                if plan is None:
+                    await _forward(websocket, _single(session.Error(
+                        "That prep plan no longer exists.", fatal=True, code="prep_plan_not_found",
+                    )))
+                    await websocket.close()
+                    return
+                # The plan fills in whatever the client left blank (the resume never leaves the server)
+                for field, value in (("job_position", plan["role"]),
+                                     ("job_description", plan["job_description"]),
+                                     ("resume_text", plan["resume_text"])):
+                    if not (setup[field] or "").strip():
+                        setup[field] = value
+                prep_focus = prep.mock_focus(plan)
             interview = session.InterviewSession(interview_graph)
             token = registry.add(interview)
-            events = interview.start(
-                job_position=first.get("job_position", ""),
-                job_description=first.get("job_description", ""),
-                resume_text=first.get("resume_text", ""),
-                interview_type=first.get("interview_type", "mixed"),
-            )
+            events = interview.start(**setup, prep_focus=prep_focus)
         if not await _forward(websocket, events):
             await websocket.close()
             return
