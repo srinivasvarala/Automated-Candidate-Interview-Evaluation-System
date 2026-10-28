@@ -210,7 +210,7 @@ Area: {area.title}
 Case: {area.case}
 Goal: {area.goal}
 
-Walk through the case as a real project. Name concrete technologies, patterns and realistic numbers, and say when NOT to use each choice. Never invent library APIs or version-specific details; if unsure, describe the concept and say what to check in the documentation. No filler. The whole lesson should take about five minutes to read.
+Walk through the case as a real project. Name concrete technologies, patterns and realistic numbers, and say when NOT to use each choice. Never invent library APIs or version-specific details; if unsure, describe the concept and say what to check in the documentation. No filler. Keep the whole lesson to roughly 1,000 to 1,300 words across all fields: choose the most important points rather than covering everything.
 
 Write each field as markdown:
 - case_title: a short title for the case.

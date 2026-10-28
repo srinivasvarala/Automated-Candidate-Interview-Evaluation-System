@@ -1556,6 +1556,12 @@ button:focus-visible { box-shadow: 0 0 0 3px var(--primary-glow); }
     color: var(--primary);
 }
 .lesson-body { font-size: 0.9rem; line-height: 1.65; color: var(--text-primary); overflow-wrap: anywhere; }
+.lesson-body h1, .lesson-body h2, .lesson-body h3, .lesson-body h4 {
+    margin: 1rem 0 0.3rem;
+    font-size: 0.92rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
 .lesson-body p { margin: 0.5rem 0; }
 .lesson-body ul, .lesson-body ol { margin: 0.5rem 0; padding-left: 1.4rem; }
 .lesson-body li { margin: 0.25rem 0; }

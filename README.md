@@ -96,6 +96,16 @@ Tier 4: Expert        ──► Complex scenarios, edge cases, system-level thin
 
 ## Features
 
+### Preparation Mode
+Before a mock interview, build a **prep plan** for a role (a quick pick like AI Architect, or free text), an experience level, and optionally a job description and resume:
+- One **area** per topic: architecture, design, frameworks and tooling, development, testing, deployment, observability, security, data, and cost and performance, plus up to two role-specific ones
+- Each area opens as a **lesson**: one concrete real-world case walked through as requirements, design, trade-offs, failure modes, testing and monitoring, and how to explain it in an interview (about a 6-8 minute read)
+- Two **checks** per lesson get feedback and a score; they never block progress
+- Plans are saved, so you can come back over several days from "My prep plans"
+- **Start a mock interview on this plan** pre-fills the role, job description and resume, and tells the Interviewer to ask about your weakest areas first
+
+Lessons are written by an AI and labelled as such: verify specific tools and versions before relying on them.
+
 ### Interview Modes
 - **Behavioral** — Past experience, teamwork, leadership, conflict resolution
 - **Technical** — Debugging, optimization, API design, concurrency, security
@@ -158,13 +168,20 @@ app/
 ├── graph.py           # LangGraph state machine — nodes, edges, conditional routing
 ├── agents.py          # Agent node functions, system prompts, adaptive difficulty logic
 ├── llm_service.py     # LiteLLM wrapper with retry logic, provider-specific handling
-├── database.py        # SQLite persistence (aiosqlite) — interviews + messages tables
+├── database.py        # SQLite persistence (aiosqlite) — interviews, messages, prep plans, lessons, checks
+├── prep.py            # Prep plan module — outline, lessons and check scoring, mock-interview focus
+├── prep_api.py        # REST routes for prep plans
+├── session.py         # Interview session — turns, autosave, resume
+├── difficulty.py      # Adaptive difficulty from the scores so far
+├── llm_output.py      # Typed shapes of the model's JSON replies
 └── resume_parser.py   # PDF/text resume extraction
 
 static/
 ├── js/
-│   ├── app.js                    # Alpine.js application — 4 screens (setup, chat, summary, history)
-│   └── interview-connection.js   # WebSocket, reconnect and resume logic (tested with node --test)
+│   ├── app.js                    # Alpine.js application — setup, chat, summary and history screens
+│   ├── interview-connection.js   # WebSocket, reconnect and resume logic (tested with node --test)
+│   ├── prep.js                   # Prep plan screens: state and actions (tested with node --test)
+│   └── prep-api.js               # Browser client for the prep plan REST API
 └── style.css          # Design system with CSS custom properties, responsive layout
 
 templates/
@@ -267,6 +284,9 @@ All client-server communication uses structured JSON over WebSocket:
 // Client → Server: Start interview
 {"job_position": "AI Engineer", "job_description": "...", "interview_type": "technical", "resume_text": "..."}
 
+// Client → Server: Start a mock interview from a prep plan (the server adds the plan's resume and focus)
+{"job_position": "AI Architect", "interview_type": "technical", "prep_plan_id": "..."}
+
 // Client → Server: Submit answer
 {"type": "user_input", "content": "My answer..."}
 
@@ -295,6 +315,13 @@ All client-server communication uses structured JSON over WebSocket:
 | `POST` | `/api/upload-resume` | Upload PDF/text resume (max 5 MB) |
 | `GET` | `/api/interviews` | List past interviews (paginated) |
 | `GET` | `/api/interviews/{id}` | Full interview detail with messages |
+| `GET` | `/api/prep/templates` | Quick-pick roles and experience levels |
+| `POST` | `/api/prep/plans` | Create a prep plan (generates the outline) |
+| `GET` | `/api/prep/plans` | List prep plans with progress |
+| `GET` | `/api/prep/plans/{id}` | A plan with each area's status, lesson and checks |
+| `POST` | `/api/prep/plans/{id}/lessons/{area}` | Open a lesson (generated once, then saved) |
+| `POST` | `/api/prep/plans/{id}/lessons/{area}/checks/{n}` | Answer a check; returns feedback and a score |
+| `POST` | `/api/prep/plans/{id}/lessons/{area}/complete` | Mark a lesson done |
 | `WS` | `/ws/interview` | WebSocket interview session |
 
 ---
