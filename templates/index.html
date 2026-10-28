@@ -30,9 +30,33 @@
         </div>
 
         <div class="setup-form">
+            <div class="mode-tabs" role="tablist">
+                <button type="button" role="tab" id="mode-prep" class="mode-tab"
+                        :class="{'mode-tab-active': setupMode === 'prep'}" :aria-selected="setupMode === 'prep'"
+                        @click="setSetupMode('prep')">Prepare</button>
+                <button type="button" role="tab" id="mode-mock" class="mode-tab"
+                        :class="{'mode-tab-active': setupMode === 'mock'}" :aria-selected="setupMode === 'mock'"
+                        @click="setSetupMode('mock')">Mock interview</button>
+            </div>
+
             <label class="field-label" for="job-role">Job Role <span class="required">*</span></label>
             <input id="job-role" type="text" x-model="jobRole" placeholder="e.g. AI Engineer, Product Manager"
-                   @keydown.enter="startInterview()">
+                   @keydown.enter="setupMode === 'prep' ? createPrepPlan() : startInterview()">
+            <div class="role-chips" x-show="setupMode === 'prep' && prepTemplates.length">
+                <template x-for="t in prepTemplates" :key="t.role">
+                    <button type="button" class="role-chip" :title="t.focus" x-text="t.role" @click="jobRole = t.role"></button>
+                </template>
+            </div>
+
+            <div x-show="setupMode === 'prep'">
+                <label class="field-label" for="seniority">Experience level</label>
+                <select id="seniority" x-model="prepSeniority">
+                    <option value="junior">Junior</option>
+                    <option value="mid">Mid-level</option>
+                    <option value="senior">Senior</option>
+                    <option value="staff">Staff and above</option>
+                </select>
+            </div>
 
             <label class="field-label" for="job-desc">Job Description <span class="optional">(optional)</span></label>
             <textarea id="job-desc" x-model="jobDescription" rows="3"
@@ -66,8 +90,8 @@
                 <div x-show="resumeError" class="upload-error" x-text="resumeError"></div>
             </div>
 
-            <label class="field-label">Interview Type</label>
-            <div class="type-selector">
+            <label class="field-label" x-show="setupMode === 'mock'">Interview Type</label>
+            <div class="type-selector" x-show="setupMode === 'mock'">
                 <template x-for="t in interviewTypes" :key="t.value">
                     <button class="type-card" :class="{'type-card-active': interviewType === t.value}"
                             @click="interviewType = t.value">
@@ -80,15 +104,31 @@
 
             <div x-show="setupNotice" class="setup-notice" x-text="setupNotice"></div>
 
-            <button @click="startInterview()" :disabled="!jobRole.trim()" class="start-btn">
-                <span>Start Interview</span>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-            </button>
+            <div x-show="setupMode === 'mock'">
+                <button @click="startInterview()" :disabled="!jobRole.trim()" class="start-btn">
+                    <span>Start Interview</span>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                </button>
 
-            <button @click="showHistory()" class="history-btn">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                View Past Interviews
-            </button>
+                <button @click="showHistory()" class="history-btn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    View Past Interviews
+                </button>
+            </div>
+
+            <div x-show="setupMode === 'prep'">
+                <p class="prep-intro">Get a study plan for the role: real-world cases covering architecture, design, frameworks, development, testing, deployment and observability.</p>
+                <div class="prep-busy" x-show="prepBusy"><div class="spinner-small"></div><span x-text="prepBusy"></span></div>
+                <div class="prep-error" x-show="prepError">
+                    <span x-text="prepError"></span>
+                    <button type="button" class="prep-retry" x-show="prepCanRetry" @click="retryPrep()">Try again</button>
+                </div>
+                <button id="create-plan-btn" @click="createPrepPlan()" :disabled="!jobRole.trim() || !!prepBusy" class="start-btn">
+                    <span>Create prep plan</span>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                </button>
+                <button @click="showPrepList()" class="history-btn">My prep plans</button>
+            </div>
         </div>
     </div>
 
@@ -131,6 +171,141 @@
                         </template>
                     </div>
                 </template>
+            </div>
+        </template>
+    </div>
+
+    <!-- Prep: My plans -->
+    <div id="prep-list-screen" class="prep-screen" x-show="screen === 'prep-list'" x-transition:enter="screen-enter" x-transition:leave="screen-leave">
+        <div class="history-header">
+            <button @click="screen = 'setup'" class="back-btn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+                Back
+            </button>
+            <h2>My prep plans</h2>
+            <div style="width:70px"></div>
+        </div>
+        <div class="prep-busy" x-show="prepBusy"><div class="spinner-small"></div><span x-text="prepBusy"></span></div>
+        <div class="prep-error" x-show="prepError">
+            <span x-text="prepError"></span>
+            <button type="button" class="prep-retry" x-show="prepCanRetry" @click="retryPrep()">Try again</button>
+        </div>
+        <div x-show="prepListLoading" class="history-loading"><div class="spinner"></div>Loading...</div>
+        <div x-show="!prepListLoading && !prepError && prepPlans.length === 0" class="history-empty">
+            <p>No prep plans yet.</p>
+            <span>Choose Prepare on the first screen to create one.</span>
+        </div>
+        <template x-for="plan in prepPlans" :key="plan.id">
+            <div class="history-card prep-plan-card" @click="openPrepPlan(plan.id)">
+                <div class="history-card-header">
+                    <strong x-text="plan.role"></strong>
+                    <span class="interview-type-badge" x-text="capitalize(plan.seniority)"></span>
+                </div>
+                <div class="history-card-meta">
+                    <span x-text="prepProgressOf(plan).done + ' of ' + prepProgressOf(plan).total + ' lessons done'"></span>
+                    <span x-text="new Date(plan.created_at).toLocaleDateString()"></span>
+                </div>
+            </div>
+        </template>
+    </div>
+
+    <!-- Prep: plan outline -->
+    <div id="prep-plan-screen" class="prep-screen" x-show="screen === 'prep-plan'" x-transition:enter="screen-enter" x-transition:leave="screen-leave">
+        <template x-if="prepPlan">
+            <div>
+                <div class="history-header">
+                    <button @click="showPrepList()" class="back-btn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+                        My plans
+                    </button>
+                    <h2><span x-text="prepPlan.role"></span> <span class="interview-type-badge" x-text="capitalize(prepPlan.seniority)"></span></h2>
+                    <div style="width:70px"></div>
+                </div>
+                <p class="prep-note">Lessons are written by an AI. Verify specific tools and versions before relying on them.</p>
+                <div class="prep-progress">
+                    <div class="prep-progress-bar"><div class="prep-progress-fill" :style="'width:' + (prepProgress.total ? prepProgress.done / prepProgress.total * 100 : 0) + '%'"></div></div>
+                    <span x-text="prepProgress.done + ' of ' + prepProgress.total + ' lessons done'"></span>
+                </div>
+                <div class="prep-busy" x-show="prepBusy"><div class="spinner-small"></div><span x-text="prepBusy"></span></div>
+                <div class="prep-error" x-show="prepError">
+                    <span x-text="prepError"></span>
+                    <button type="button" class="prep-retry" x-show="prepCanRetry" @click="retryPrep()">Try again</button>
+                </div>
+                <template x-for="(area, i) in prepPlan.areas" :key="area.key">
+                    <div class="history-card prep-area-card" :data-area="area.key" @click="openPrepLesson(area.key)">
+                        <div class="history-card-header">
+                            <span class="prep-area-num" x-text="i + 1"></span>
+                            <strong x-text="area.title"></strong>
+                            <span class="prep-status" :class="'prep-status-' + area.status" x-text="prepStatusLabel(area.status)"></span>
+                        </div>
+                        <div class="prep-area-case" x-text="area.case"></div>
+                        <div class="history-card-meta">
+                            <span x-text="area.goal"></span>
+                            <span x-show="prepAverage(area) !== null" x-text="'Checks: ' + (prepAverage(area) === null ? '' : prepAverage(area).toFixed(1)) + '/10'"></span>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </template>
+    </div>
+
+    <!-- Prep: lesson -->
+    <div id="prep-lesson-screen" class="prep-screen" x-ref="prepLesson" x-show="screen === 'prep-lesson'" x-transition:enter="screen-enter" x-transition:leave="screen-leave">
+        <template x-if="prepArea && prepArea.lesson">
+            <div>
+                <div class="history-header">
+                    <button @click="backToPrepPlan()" class="back-btn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+                        Plan
+                    </button>
+                    <h2 x-text="prepArea.title"></h2>
+                    <span class="prep-status" :class="'prep-status-' + prepArea.status" x-text="prepStatusLabel(prepArea.status)"></span>
+                </div>
+                <h3 class="lesson-case" x-text="prepArea.lesson.case_title"></h3>
+                <p class="prep-note">AI-generated. Verify specific tools and versions before relying on them.</p>
+                <template x-for="section in prepSections" :key="section.key">
+                    <section class="lesson-section" :data-section="section.key">
+                        <h4 x-text="section.title"></h4>
+                        <div class="lesson-body" x-html="renderMarkdown(section.markdown)"></div>
+                    </section>
+                </template>
+
+                <section class="lesson-section lesson-checks">
+                    <h4>Check yourself</h4>
+                    <div class="prep-error" x-show="prepError">
+                        <span x-text="prepError"></span>
+                        <button type="button" class="prep-retry" x-show="prepCanRetry" @click="retryPrep()">Try again</button>
+                    </div>
+                    <template x-for="(question, i) in prepArea.lesson.checks" :key="i">
+                        <div class="check-item" :data-check="i">
+                            <p class="check-question" x-text="(i + 1) + '. ' + question"></p>
+                            <template x-if="prepCheckAnswer(i)">
+                                <div class="check-result">
+                                    <div class="check-answer" x-text="prepCheckAnswer(i).answer"></div>
+                                    <div class="check-feedback">
+                                        <span class="history-score-pill" x-show="prepCheckAnswer(i).score !== null"
+                                              :class="scoreColor(prepCheckAnswer(i).score)"
+                                              x-text="prepCheckAnswer(i).score + '/10'"></span>
+                                        <span x-text="prepCheckAnswer(i).feedback"></span>
+                                    </div>
+                                </div>
+                            </template>
+                            <textarea rows="3" x-model="checkDrafts[i]"
+                                      :placeholder="prepCheckAnswer(i) ? 'Answer again to improve it...' : 'Write your answer...'"></textarea>
+                            <button type="button" class="check-btn" @click="submitCheck(i)"
+                                    :disabled="!(checkDrafts[i] || '').trim() || checkBusy !== -1"
+                                    x-text="checkBusy === i ? 'Getting feedback...' : 'Get feedback'"></button>
+                        </div>
+                    </template>
+                </section>
+
+                <div class="lesson-footer">
+                    <button type="button" class="copy-btn" id="complete-lesson-btn" @click="completePrepLesson()"
+                            x-show="prepArea.status !== 'done'" :disabled="!!prepBusy">Mark as done</button>
+                    <button type="button" class="restart-btn" x-show="nextPrepArea" @click="openPrepLesson(nextPrepArea.key)"
+                            :disabled="!!prepBusy" x-text="'Next: ' + (nextPrepArea ? nextPrepArea.title : '')"></button>
+                </div>
+                <div class="prep-busy" x-show="prepBusy"><div class="spinner-small"></div><span x-text="prepBusy"></span></div>
             </div>
         </template>
     </div>

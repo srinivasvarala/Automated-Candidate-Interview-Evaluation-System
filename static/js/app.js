@@ -1,13 +1,14 @@
 import { InterviewConnection } from './interview-connection.js';
+import { prepMixin } from './prep.js';
 
 window.interviewApp = function interviewApp() {
     // Not reactive on purpose: Alpine would wrap the connection in a Proxy.
     let connection = null;
     let lastConnectionScreen = null;
 
-    return {
+    const app = {
         // State
-        screen: 'setup',       // 'setup' | 'chat' | 'summary' | 'history'
+        screen: 'setup',       // 'setup' | 'chat' | 'summary' | 'history' | 'prep-list' | 'prep-plan' | 'prep-lesson'
         jobRole: '',
         jobDescription: '',
         interviewType: 'mixed',
@@ -274,6 +275,13 @@ window.interviewApp = function interviewApp() {
             return text;
         },
 
+        scrollPrepToTop() {
+            this.$nextTick(() => {
+                const el = this.$refs.prepLesson;
+                if (el) el.scrollTop = 0;
+            });
+        },
+
         scrollToBottom() {
             this.$nextTick(() => {
                 const el = this.$refs.messages;
@@ -333,4 +341,8 @@ window.interviewApp = function interviewApp() {
             return round;
         },
     };
+
+    // Prep plan screens live in prep.js; merge with descriptors so getters survive.
+    Object.defineProperties(app, Object.getOwnPropertyDescriptors(prepMixin()));
+    return app;
 };

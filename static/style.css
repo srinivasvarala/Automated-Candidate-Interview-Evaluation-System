@@ -1408,3 +1408,199 @@ button:focus-visible { box-shadow: 0 0 0 3px var(--primary-glow); }
     color: var(--text-muted);
     border-top: 1px solid var(--border, #e5e7eb);
 }
+
+/* ========================================
+   Prep plans
+   ======================================== */
+.mode-tabs {
+    display: flex;
+    gap: 0.25rem;
+    padding: 0.25rem;
+    margin-bottom: 1.25rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+}
+.mode-tab {
+    flex: 1;
+    width: auto;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.85rem;
+    background: transparent;
+    color: var(--text-secondary);
+    box-shadow: none;
+}
+.mode-tab:hover, .mode-tab:active { background: white; color: var(--primary); transform: none; box-shadow: none; }
+.mode-tab-active, .mode-tab-active:hover { background: white; color: var(--primary); box-shadow: var(--shadow-sm); }
+
+#seniority {
+    width: 100%;
+    padding: 0.65rem 0.85rem;
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 0.9rem;
+    font-family: inherit;
+    color: var(--text-primary);
+    background: white;
+    outline: none;
+}
+#seniority:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-glow); }
+
+.role-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.5rem 0 0.25rem; }
+.role-chip {
+    width: auto;
+    padding: 0.25rem 0.7rem;
+    font-size: 0.72rem;
+    border-radius: 1rem;
+    background: var(--primary-light);
+    color: var(--primary);
+}
+.role-chip:hover { background: var(--primary); color: white; transform: none; box-shadow: none; }
+
+.prep-intro { margin: 1.25rem 0 0; font-size: 0.8rem; color: var(--text-secondary); line-height: 1.5; text-align: left; }
+
+.prep-busy {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin: 1rem 0 0;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    text-align: left;
+}
+.prep-error {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin: 1rem 0 0.75rem;
+    padding: 0.7rem 0.9rem;
+    border-radius: var(--radius-sm);
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #b91c1c;
+    font-size: 0.85rem;
+    text-align: left;
+}
+.prep-retry {
+    width: auto;
+    flex-shrink: 0;
+    padding: 0.3rem 0.75rem;
+    font-size: 0.78rem;
+    background: white;
+    color: #b91c1c;
+    border: 1px solid #fecaca;
+}
+.prep-retry:hover { background: #fee2e2; color: #b91c1c; }
+
+.prep-note { margin: 0.5rem 0 1rem; font-size: 0.75rem; color: var(--text-muted); text-align: left; }
+
+.prep-screen {
+    background: white;
+    padding: 1.5rem;
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-xl);
+    width: 90%;
+    max-width: 720px;
+    max-height: 85vh;
+    overflow-y: auto;
+    border: 1px solid var(--border-light);
+    text-align: left;
+}
+.prep-screen .history-header { gap: 0.75rem; }
+.prep-screen .history-header h2 { display: flex; align-items: center; gap: 0.5rem; }
+
+.prep-progress {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+}
+.prep-progress-bar { flex: 1; height: 6px; background: var(--border-light); border-radius: 3px; overflow: hidden; }
+.prep-progress-fill { height: 100%; background: linear-gradient(135deg, #6366f1, #8b5cf6); transition: width var(--transition); }
+
+.prep-area-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.4rem;
+    height: 1.4rem;
+    border-radius: 50%;
+    background: var(--primary-light);
+    color: var(--primary);
+    font-size: 0.7rem;
+    font-weight: 700;
+}
+.prep-area-case { font-size: 0.82rem; color: var(--text-primary); margin-bottom: 0.35rem; }
+.prep-status {
+    margin-left: auto;
+    font-size: 0.65rem;
+    font-weight: 600;
+    padding: 0.15rem 0.55rem;
+    border-radius: 1rem;
+    white-space: nowrap;
+}
+.prep-status-not_started { background: #f3f4f6; color: #6b7280; }
+.prep-status-ready { background: #dbeafe; color: #1e40af; }
+.prep-status-done { background: #d1fae5; color: #065f46; }
+
+.lesson-case { margin: 0; font-size: 1.05rem; color: var(--text-primary); }
+.lesson-section { margin: 1.25rem 0; }
+.lesson-section h4 {
+    margin: 0 0 0.4rem;
+    font-size: 0.8rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--primary);
+}
+.lesson-body { font-size: 0.9rem; line-height: 1.65; color: var(--text-primary); overflow-wrap: anywhere; }
+.lesson-body p { margin: 0.5rem 0; }
+.lesson-body ul, .lesson-body ol { margin: 0.5rem 0; padding-left: 1.4rem; }
+.lesson-body li { margin: 0.25rem 0; }
+.lesson-body code { background: var(--bg); padding: 0.1rem 0.35rem; border-radius: 4px; font-size: 0.85em; }
+.lesson-body pre { background: #0f172a; color: #e2e8f0; padding: 0.85rem 1rem; border-radius: var(--radius-sm); overflow-x: auto; }
+.lesson-body pre code { background: none; padding: 0; color: inherit; }
+.lesson-body table { border-collapse: collapse; margin: 0.75rem 0; font-size: 0.85rem; }
+.lesson-body th, .lesson-body td { border: 1px solid var(--border); padding: 0.35rem 0.6rem; }
+
+.lesson-checks { padding: 1rem 1.1rem; background: var(--bg); border-radius: var(--radius-md); border: 1px solid var(--border-light); }
+.check-item { margin-top: 1rem; }
+.check-question { margin: 0 0 0.5rem; font-size: 0.9rem; font-weight: 600; color: var(--text-primary); }
+.check-item textarea {
+    width: 100%;
+    padding: 0.65rem 0.85rem;
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 0.9rem;
+    font-family: inherit;
+    line-height: 1.5;
+    resize: vertical;
+    outline: none;
+    background: white;
+}
+.check-item textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-glow); }
+.check-btn { width: auto; margin-top: 0.5rem; padding: 0.45rem 1rem; font-size: 0.82rem; }
+.check-result { margin-bottom: 0.6rem; font-size: 0.85rem; }
+.check-answer {
+    padding: 0.6rem 0.8rem;
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+}
+.check-feedback {
+    margin-top: 0.4rem;
+    padding: 0.6rem 0.8rem;
+    background: var(--evaluator-bg);
+    border: 1px solid var(--evaluator-border);
+    border-radius: var(--radius-sm);
+    color: var(--evaluator-text);
+    line-height: 1.5;
+}
+.check-feedback .history-score-pill { margin-right: 0.4rem; }
+
+.lesson-footer { display: flex; gap: 0.6rem; margin-top: 1.25rem; }
+.lesson-footer button { flex: 1; }
