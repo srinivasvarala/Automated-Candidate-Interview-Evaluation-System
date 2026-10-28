@@ -71,7 +71,7 @@ async def complete(messages: list[dict], temperature: float = 0.7) -> str:
     return result
 
 
-async def complete_json(messages: list[dict], temperature: float = 0.3) -> str:
+async def complete_json(messages: list[dict], temperature: float = 0.3, timeout: int = 60) -> str:
     """Call LLM expecting JSON. Extracts JSON from response even without response_format support."""
     logger.debug("LLM JSON call: model=%s, messages=%d", settings.llm_model, len(messages))
 
@@ -83,7 +83,7 @@ async def complete_json(messages: list[dict], temperature: float = 0.3) -> str:
         "api_key": settings.llm_api_key,
         "temperature": temperature,
         "num_retries": 2,
-        "request_timeout": 60,
+        "request_timeout": timeout,
     }
 
     # Only add response_format for providers that support it (OpenAI-compatible)
@@ -112,11 +112,14 @@ async def complete_json(messages: list[dict], temperature: float = 0.3) -> str:
     return result
 
 
-async def complete_model(messages: list[dict], model: type[T], temperature: float = 0.3) -> T:
+async def complete_model(
+    messages: list[dict], model: type[T], temperature: float = 0.3, timeout: int | None = None
+) -> T:
     """Call LLM expecting JSON that matches `model`; retry once, then raise LLMOutputError."""
     error: ValidationError | None = None
     for attempt in (1, 2):
-        text = await complete_json(messages, temperature=temperature)
+        extra = {"timeout": timeout} if timeout else {}  # only passed when asked for
+        text = await complete_json(messages, temperature=temperature, **extra)
         try:
             return model.model_validate_json(text)
         except ValidationError as e:

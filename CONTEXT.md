@@ -48,8 +48,29 @@ _Avoid_: level
 **Difficulty**:
 The module that turns the Scores so far into the next Tier, the prompt brief for the Interviewer, and the per-question curve on the Scorecard. Not a synonym for Tier.
 
+**Prep plan**:
+All preparation for one role and Seniority, made before any mock interview. Has one Area per backbone topic (architecture, design, frameworks, development, testing, deployment, observability, security, data, cost and performance), plus at most two role-specific ones.
+_Avoid_: course, study guide, curriculum
+
+**Area**:
+One backbone topic of a Prep plan.
+_Avoid_: module (reserved for the design vocabulary), topic
+
+**Lesson**:
+The walkthrough of one concrete real-world case for one Area: requirements, design, trade-offs, failure modes, testing and monitoring, and how to explain it in an interview. Generated when first opened, then saved.
+_Avoid_: chapter, tutorial
+
+**Check**:
+A free-text question at the end of a Lesson. It gets feedback and a Score, and never blocks progress.
+_Avoid_: quiz, exercise
+
+**Seniority**:
+junior, mid, senior or staff: how deep a Prep plan goes.
+_Avoid_: level (that word clashes with Tier)
+
 ## Relationships
 
 - An **Interview session** has many **Turns**; its **Transcript** is the messages of all Turns.
 - An **Interview session** ends with exactly one **Scorecard** unless it is `abandoned`.
+- A **Prep plan** has one **Lesson** per **Area**, and each **Lesson** has **Checks**; weak **Check** Scores decide which **Areas** a mock **Interview session** focuses on.
 - The **Evaluator's** **Score** for a **Turn** decides the **Tier** of the next **Turn**, through **Difficulty**.
