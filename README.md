@@ -22,8 +22,11 @@ The interview itself is not a static question list either. It implements a **mul
 ## Demo
 
 <p align="center">
-  <img src="docs/screenshot-setup.png" alt="AI Interview Coach — Setup Screen" width="400">
+  <img src="docs/prepare-for-interview.png" alt="Prepare tab: pick a role and experience level to build a prep plan" width="380">
+  &nbsp;&nbsp;
+  <img src="docs/mock-interview.png" alt="Mock interview tab: choose an interview type and start" width="380">
 </p>
+<p align="center"><em>Prepare for a role (left), then practise in a mock interview (right).</em></p>
 
 ---
 
