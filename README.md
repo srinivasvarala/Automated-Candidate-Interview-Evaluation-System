@@ -1,6 +1,6 @@
 # AI Interview Coach
 
-**A multi-agent AI system that conducts realistic mock interviews, provides real-time feedback, and generates structured scorecards — built with LangGraph, FastAPI, and LiteLLM.**
+**An AI interview coach in two parts: a preparation mode that teaches how to design and build real-world systems for a role, then a multi-agent mock interview with real-time feedback and a structured scorecard — built with LangGraph, FastAPI, and LiteLLM.**
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue?logo=python&logoColor=white)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-WebSocket-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
@@ -13,7 +13,9 @@
 
 ## Why This Project
 
-Most AI interview tools generate a static list of questions. This project takes a fundamentally different approach: it implements a **multi-agent agentic workflow** where specialized AI agents collaborate in real-time — one conducts the interview, another evaluates responses, and a third synthesizes everything into an actionable scorecard. The agents communicate through a **graph-based state machine** with human-in-the-loop interaction, adaptive difficulty scaling, and persistent session management.
+Most interview-prep tools stop at a list of questions. This project covers the whole path: **prepare** for a role with lessons on real-world design and engineering, then **practise** in a mock interview that focuses on the areas where you scored lowest.
+
+The interview itself is not a static question list either. It implements a **multi-agent agentic workflow** where specialized AI agents collaborate in real-time — one conducts the interview, another evaluates responses, and a third synthesizes everything into an actionable scorecard. The agents communicate through a **graph-based state machine** with human-in-the-loop interaction, adaptive difficulty scaling, and persistent session management.
 
 ---
 
@@ -150,11 +152,11 @@ The final scorecard includes:
 | **LLM Gateway** | LiteLLM | Unified API across 100+ LLM providers — swap between OpenAI, Anthropic, Ollama with a config change |
 | **Real-Time Transport** | WebSocket + JSON | Bidirectional structured messaging for streaming agent updates without polling |
 | **Persistence** | SQLite (aiosqlite) | Zero-config async database for interview history — no external services needed |
-| **Frontend** | Alpine.js | Lightweight reactivity with no build step — keeps deployment simple |
+| **Frontend** | Alpine.js + native ES modules | Lightweight reactivity with no bundler; connection and prep logic live in plain modules tested with `node --test` |
 | **Resume Parsing** | pypdf | Extract text from uploaded PDF resumes |
 | **Config** | Pydantic Settings | Typed, validated configuration from `.env` with fail-fast on missing API keys |
 | **Containerization** | Docker (multi-stage) | Reproducible builds with non-root user and health checks |
-| **CI/CD** | GitHub Actions | Automated linting (ruff), testing (pytest), and Docker builds on every push |
+| **CI/CD** | GitHub Actions | Linting (ruff), Python tests (pytest), JavaScript tests (`node --test`) and a Docker build on every push |
 
 ---
 
@@ -171,9 +173,10 @@ app/
 ├── database.py        # SQLite persistence (aiosqlite) — interviews, messages, prep plans, lessons, checks
 ├── prep.py            # Prep plan module — outline, lessons and check scoring, mock-interview focus
 ├── prep_api.py        # REST routes for prep plans
-├── session.py         # Interview session — turns, autosave, resume
-├── difficulty.py      # Adaptive difficulty from the scores so far
-├── llm_output.py      # Typed shapes of the model's JSON replies
+├── session.py         # Interview session — validation, turns, autosave, resume (typed events)
+├── registry.py        # Live sessions kept briefly after a client drops, so it can re-attach
+├── difficulty.py      # Adaptive difficulty: tier, prompt brief and curve from the scores so far
+├── llm_output.py      # Typed shapes of the model's JSON replies (validated, retried once)
 └── resume_parser.py   # PDF/text resume extraction
 
 static/
@@ -190,13 +193,20 @@ templates/
 tests/
 ├── conftest.py        # Pytest fixtures — sample states, mock LLM responses
 ├── test_agents.py     # Agent node tests — message building, scoring, evaluator cleaning
-├── test_api.py        # HTTP + WebSocket endpoint tests
+├── test_api.py        # HTTP + WebSocket endpoint tests, including mock-from-plan
 ├── test_graph.py      # State machine routing logic tests
-└── test_config.py     # Configuration validation tests
+├── test_session.py    # Interview session: events, resume, autosave, failures
+├── test_difficulty.py # Tier rules, streaks, unscored turns
+├── test_llm_output.py # Validation of model replies
+├── test_prep.py       # Prep plan module with a scripted LLM
+├── test_prep_api.py   # Prep REST routes, including concurrent lesson generation
+├── test_database*.py  # SQLite storage for interviews and prep plans
+└── js/                # node --test: interview connection, prep client and prep screens
 
 .github/workflows/
 └── ci.yml             # CI pipeline — lint, test, Docker build
 
+CONTEXT.md             # Domain glossary (Interview session, Turn, Tier, Prep plan, Area, Lesson, Check...)
 Dockerfile             # Multi-stage build (3.11-slim, non-root, health check)
 docker-compose.yml     # Single-command deployment with env_file support
 ```
@@ -243,6 +253,7 @@ LLM_API_KEY=your-api-key-here
 # Interview settings (optional)
 NUM_QUESTIONS=5
 MAX_EVALUATOR_WORDS=50
+MAX_ANSWER_LENGTH=5000
 ```
 
 **Supported providers:**
@@ -293,15 +304,25 @@ All client-server communication uses structured JSON over WebSocket:
 // Client → Server: End early
 {"type": "end_interview"}
 
-// Server → Client: Agent message (interviewer or evaluator)
-{"type": "agent_message", "source": "interviewer", "content": "...", "metadata": {"difficulty_tier": 2}}
+// Client → Server: Re-attach after a refresh or dropped connection
+{"type": "resume", "session_id": "..."}
+
+// Server → Client: Agent message (interviewer or evaluator).
+// Evaluator messages carry the hidden score and tier; an unscored turn has empty metadata.
+{"type": "agent_message", "source": "evaluator", "content": "...", "metadata": {"score": 8, "tier": "Advanced", "tier_index": 3}}
 
 // Server → Client: System events
-{"type": "system_event", "event": "waiting_for_input", "metadata": {"questions_asked": 3, "num_questions": 5}}
+{"type": "system_event", "event": "interview_started", "metadata": {"num_questions": 5, "session_id": "..."}}
+{"type": "system_event", "event": "resumed", "metadata": {"session_id": "...", "messages": [...], "num_questions": 5, "questions_answered": 2}}
+{"type": "system_event", "event": "waiting_for_input"}
 {"type": "system_event", "event": "agent_typing"}
+{"type": "system_event", "event": "interview_complete"}
 
-// Server → Client: Final scorecard
-{"type": "summary", "content": "...", "metadata": {"scores": {...}, "strengths": [...], "improvements": [...]}}
+// Server → Client: Error (fatal ones end the session; codes include session_not_found, prep_plan_not_found)
+{"type": "error", "content": "...", "code": "session_not_found", "fatal": true}
+
+// Server → Client: Final scorecard (includes the per-question difficulty curve)
+{"type": "summary", "content": "...", "metadata": {"scores": {...}, "strengths": [...], "improvements": [...], "difficulty_curve": [...]}}
 ```
 
 ---
@@ -329,22 +350,25 @@ All client-server communication uses structured JSON over WebSocket:
 ## Testing
 
 ```bash
-# Run all tests
-pytest
+# Python tests (189) — an LLM is never called; tests use scripted fakes
+LLM_API_KEY=test-key LLM_MODEL=openai/gpt-4o NUM_QUESTIONS=3 pytest -q
 
-# Run with coverage
-pytest --cov=app
+# JavaScript tests (63) — interview connection, prep client and prep screens; needs Node 22+
+node --test tests/js/*.test.mjs
 
-# Run specific test module
-pytest tests/test_agents.py -v
+# Lint
+ruff check app/ tests/
 ```
 
-Test suite covers:
-- Agent node functions (message construction, scoring, adaptive difficulty)
-- Evaluator output post-processing
-- State machine routing logic
-- HTTP and WebSocket endpoints
-- Configuration validation
+What the suites cover:
+- **Interview session**: typed events, validation, autosave after every turn, resume after a dropped connection, failure handling
+- **Difficulty**: tier rules and streaks, replayed from the score list; unscored turns skipped
+- **Model output**: invalid or partial replies are retried once, then degrade gracefully (an unscored turn, a scorecard with a plain note) instead of crashing
+- **Prep plans**: outline always contains every area, lessons generated once even under concurrent requests, a failed check score leaves feedback unscored, nothing partial saved when the model fails
+- **REST and WebSocket endpoints**: 400/404/409/502 paths, mock interview started from a plan
+- **Browser logic**: reconnect backoff, resume, retry handling (a real infinite-retry bug was caught here)
+
+Beyond the automated suites, the flows were also driven in headless Chrome against a stand-in model, and one full prep flow (outline, lesson, check) was read end to end against a real model. Lesson content is AI-generated, so its factual accuracy is not tested automatically.
 
 ---
 
@@ -358,7 +382,27 @@ Test suite covers:
 | **Post-processing evaluator output** | LLMs occasionally generate questions in evaluation output despite prompt instructions. A programmatic cleaning step (`_clean_evaluator_response`) provides a reliable safety net beyond prompt engineering |
 | **Random question angle injection** | With identical inputs, LLMs produce identical outputs at the same temperature. Injecting a randomly selected angle from a pool of 10+ per interview type ensures variety across sessions |
 | **SQLite for persistence** | Zero-dependency async database (aiosqlite) that works out of the box — appropriate for a single-server deployment without external infrastructure |
-| **Alpine.js (no build step)** | Keeps the frontend deployment simple — no Node.js, no bundler, no build pipeline. Single HTML file with reactive data binding |
+| **Alpine.js (no build step)** | Keeps the frontend deployment simple — no bundler, no build pipeline. Logic that needs tests lives in plain ES modules, so Node is only a dev/CI dependency |
+| **One Interview session module** | Validation, graph driving, autosave and resume sit behind three calls (`start`, `answer`, `end`) that yield typed events, so the WebSocket route is thin and the whole flow is testable without a socket |
+| **Difficulty derived, never stored** | The tier and streaks are recomputed by replaying the score list, so there is no second copy of state to drift out of sync, and the same code produces the scorecard's difficulty curve |
+| **Validated model output** | Every LLM JSON reply is parsed into a typed model, retried once, then degraded (unscored turn, scorecard without category scores) rather than failing the interview |
+| **Prep plans over REST, lessons generated lazily** | A lesson is a long single generation, not a conversation, so it uses plain HTTP, is generated on first open, saved, and guarded by a per-lesson lock so double clicks cost one model call |
+| **Mock interview takes its focus from the server** | The browser sends only a plan id; the server loads the plan, fills in the resume and picks the weakest areas by check score, so the stored resume never goes back to the client |
+
+---
+
+## Known Limitations
+
+- Lessons and check feedback are AI-generated and may state version-specific details wrongly; they are labelled, and the app tells you to verify them. Web-grounded lessons are a possible next step
+- Lessons run about 1,600 words (a 6-8 minute read) on current models
+- Live interview sessions are held in memory: a server restart ends them (finished interviews and prep plans are in SQLite)
+- No accounts: all data is local to the instance
+- A prep plan's resume text is stored in SQLite so later lessons can use it; it is never returned to the browser
+- The prep screen is not restored on page refresh; reopen the plan from "My prep plans"
+
+## Roadmap
+
+Retry a weak answer, progress trends across sessions, weak-area drills, timers and voice mode, company-style interview presets, Mermaid diagrams in lessons, PDF export of the scorecard.
 
 ---
 
