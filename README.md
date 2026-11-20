@@ -1,6 +1,6 @@
-# AI Interview Coach
+# Agentic Interview Coach
 
-**An AI interview coach in two parts: a preparation mode that teaches how to design and build real-world systems for a role, then a multi-agent mock interview with real-time feedback and a structured scorecard — built with LangGraph, FastAPI, and LiteLLM.**
+**An agentic interview prep and mock interview system in two parts: a preparation mode that teaches how to design and build real-world systems for a role, then a multi-agent mock interview with real-time feedback and a structured scorecard — built with LangGraph, FastAPI, and LiteLLM.**
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue?logo=python&logoColor=white)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-WebSocket-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
@@ -227,8 +227,8 @@ docker-compose.yml     # Single-command deployment with env_file support
 
 ```bash
 # Clone the repository
-git clone https://github.com/<your-username>/Automated-Candidate-Interview-Evaluation-System.git
-cd Automated-Candidate-Interview-Evaluation-System
+git clone https://github.com/srinivasvarala/agentic-interview-coach.git
+cd agentic-interview-coach
 
 # Create and activate virtual environment
 python -m venv venv
@@ -411,4 +411,4 @@ Retry a weak answer, progress trends across sessions, weak-area drills, timers a
 
 ## License
 
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+This project is licensed under the Apache License 2.0 — see the [LICENSE](LICENSE) file for details.

@@ -32,7 +32,7 @@ async def lifespan(app: FastAPI):
 
 registry = SessionRegistry()
 
-app = FastAPI(title="AI Interview Coach", lifespan=lifespan)
+app = FastAPI(title="Agentic Interview Coach", lifespan=lifespan)
 
 app.include_router(prep_api.router)
 app.mount("/static", StaticFiles(directory="static"), name="static")

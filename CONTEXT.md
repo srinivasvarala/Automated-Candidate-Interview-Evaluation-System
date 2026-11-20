@@ -1,4 +1,4 @@
-# AI Interview Coach
+# Agentic Interview Coach
 
 A mock-interview app. A candidate picks a role, answers questions from an AI Interviewer, gets feedback from an AI Evaluator after each answer, and receives a Scorecard at the end.
 

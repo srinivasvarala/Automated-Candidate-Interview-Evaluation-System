@@ -30,7 +30,7 @@ class TestIndexEndpoint:
         response = client.get("/")
         assert response.status_code == 200
         assert "text/html" in response.headers["content-type"]
-        assert "AI Interview Coach" in response.text
+        assert "Agentic Interview Coach" in response.text
 
 
 class TestErrorStatusCodes:
